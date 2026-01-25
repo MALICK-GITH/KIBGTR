@@ -15,7 +15,13 @@ from pathlib import Path
 class DatabaseManager:
     """Gestionnaire de base de données avec backup automatique"""
     
-    def __init__(self, db_path="oracxpred.db", backup_dir="backups"):
+    def __init__(self, db_path=None, backup_dir="backups"):
+        # Utiliser le même chemin que l'application principale
+        if db_path is None:
+            import os
+            data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+            db_path = os.path.join(data_dir, 'oracxpred.db')
+        
         self.db_path = db_path
         self.backup_dir = Path(backup_dir)
         self.backup_dir.mkdir(exist_ok=True)
@@ -33,7 +39,7 @@ class DatabaseManager:
             # Vérifier si la base de données existe
             if os.path.exists(self.db_path):
                 shutil.copy2(self.db_path, backup_path)
-                print(f"✅ Backup créé: {backup_path}")
+                print(f"Backup cree: {backup_path}")
                 
                 # Créer un fichier de métadonnées
                 metadata = {
@@ -218,23 +224,23 @@ db_manager = DatabaseManager()
 
 def initialize_persistence():
     """Initialise le système de persistance"""
-    print("🔧 Initialisation du système de persistance...")
+    print("Initialisation du systeme de persistance...")
     
     # Vérifier l'intégrité de la base de données
     is_valid, message = db_manager.verify_database_integrity()
     if is_valid:
-        print(f"✅ {message}")
+        print(f"{message}")
     else:
-        print(f"⚠️ {message}")
+        print(f"{message}")
         
         # Tenter de restaurer le dernier backup si disponible
         backups = db_manager.list_backups()
         if backups:
-            print("🔄 Tentative de restauration depuis le dernier backup...")
+            print("Tentative de restauration depuis le dernier backup...")
             if db_manager.restore_backup(backups[0]["name"]):
-                print("✅ Base de données restaurée")
+                print("Base de données restauree")
             else:
-                print("❌ Échec de la restauration")
+                print("Echec de la restauration")
     
     # Créer un backup initial
     db_manager.create_backup("initial_backup.db")
@@ -245,11 +251,11 @@ def initialize_persistence():
     # Afficher les statistiques
     stats = db_manager.get_database_stats()
     if stats:
-        print(f"📊 Base de données: {stats['size_mb']} MB, {len(stats['tables'])} tables")
+        print(f"Base de données: {stats['size_mb']} MB, {len(stats['tables'])} tables")
         for table, count in stats['tables'].items():
-            print(f"   📋 {table}: {count} enregistrements")
+            print(f"   {table}: {count} enregistrements")
     
-    print("🚀 Système de persistance initialisé avec succès")
+    print("Systeme de persistance initialise avec succes")
 
 def manual_backup():
     """Effectue un backup manuel"""

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from flask import Flask, request, render_template_string, session, redirect, url_for
 import requests
 import os
@@ -7,46 +8,55 @@ import re
 import json
 from collections import defaultdict
 
+# Import du module de stockage cloud
+try:
+    from cloud_storage import initialize_cloud_storage, sync_now, get_cloud_status, cloud_manager
+    CLOUD_STORAGE_ENABLED = True
+    print("Module de stockage cloud active")
+except ImportError:
+    CLOUD_STORAGE_ENABLED = False
+    print("Module de stockage cloud non disponible")
+
 # Import du module de persistance
 try:
     from persistence_manager import initialize_persistence, manual_backup, list_available_backups, restore_from_backup, db_manager
     PERSISTENCE_ENABLED = True
-    print("✅ Module de persistance activé")
+    print("Module de persistance active")
 except ImportError:
     PERSISTENCE_ENABLED = False
-    print("⚠️ Module de persistance non disponible")
+    print("Module de persistance non disponible")
 
 # Import du module de sécurité
 try:
     from security import hash_password, check_password, create_admin_user
     SECURITY_ENABLED = True
-    print("✅ Module de sécurité activé")
+    print("Module de sécurité active")
 except ImportError:
     SECURITY_ENABLED = False
-    print("⚠️ Module de sécurité non disponible - Mode compatibilité")
+    print("Module de sécurité non disponible - Mode compatibilité")
 
 # Import du système quantique simplifié (compatible Render)
 try:
     from systeme_prediction_quantique import SystemePredictionQuantique
     QUANTIQUE_DISPONIBLE = True
-    print("✅ Système quantique complet chargé")
+    print("Systeme quantique complet charge")
 except ImportError:
     try:
         from systeme_prediction_simple import SystemePredictionQuantique
         QUANTIQUE_DISPONIBLE = True
-        print("✅ Système quantique simplifié chargé (compatible Render)")
+        print("Systeme quantique simplifie charge (compatible Render)")
     except ImportError:
         QUANTIQUE_DISPONIBLE = False
-        print("⚠️ Aucun système quantique disponible")
+        print("Aucun systeme quantique disponible")
 
 # Import du système avancé pour paris alternatifs
 try:
     from systeme_alternatifs_avance import SystemePredictionParisAlternatifsAvance
     ALTERNATIFS_AVANCE_DISPONIBLE = True
-    print("✅ Système alternatifs avancé chargé")
+    print("Systeme alternatifs avance charge")
 except ImportError:
     ALTERNATIFS_AVANCE_DISPONIBLE = False
-    print("⚠️ Système alternatifs avancé non disponible")
+    print("Systeme alternatifs avance non disponible")
 
 # Import des bots spécialisés et du maître
 try:
@@ -59,10 +69,10 @@ try:
     )
     from maitre_pronostics import MaitreDesPronostics
     BOTS_ALTERNATIFS_DISPONIBLES = True
-    print("✅ Tous les bots alternatifs et le Maître des Pronostics chargés")
+    print("Tous les bots alternatifs et le Maitre des Pronostics charges")
 except ImportError:
     BOTS_ALTERNATIFS_DISPONIBLES = False
-    print("⚠️ Bots alternatifs non disponibles")
+    print("Bots alternatifs non disponibles")
 
 # Import optionnel de numpy (désactivé pour Render)
 NUMPY_DISPONIBLE = False
@@ -104,7 +114,13 @@ from prediction_manager import (
 np = NumpySimulation()
 
 app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///oracxpred.db")
+# Créer le dossier data si nécessaire
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# Configuration de la base de données avec chemin absolu
+DB_PATH = os.path.join(DATA_DIR, 'oracxpred.db')
+app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.secret_key = 'oracxpred-metaphore-secret-key-2024'  # Clé secrète pour les sessions
 db.init_app(app)
@@ -116,6 +132,10 @@ with app.app_context():
 if PERSISTENCE_ENABLED:
     initialize_persistence()
 
+# Initialiser le stockage cloud
+if CLOUD_STORAGE_ENABLED:
+    initialize_cloud_storage()
+
 # Import du template de backup
 try:
     from admin_backup_template import ADMIN_BACKUP_TEMPLATE
@@ -124,6 +144,15 @@ except ImportError:
     BACKUP_TEMPLATE_AVAILABLE = False
     # Template de secours simple
     ADMIN_BACKUP_TEMPLATE = """<!DOCTYPE html><html><head><title>Backups</title></head><body><h1>Gestion des Backups</h1><p>Template non disponible</p></body></html>"""
+
+# Import du template cloud
+try:
+    from admin_cloud_template import ADMIN_CLOUD_TEMPLATE
+    CLOUD_TEMPLATE_AVAILABLE = True
+except ImportError:
+    CLOUD_TEMPLATE_AVAILABLE = False
+    # Template de secours simple
+    ADMIN_CLOUD_TEMPLATE = """<!DOCTYPE html><html><head><title>Cloud</title></head><body><h1>Stockage Cloud</h1><p>Template non disponible</p></body></html>"""
 
 # ========== FONCTIONS UTILITAIRES ==========
 
@@ -536,6 +565,63 @@ def admin_backup():
         backups=backups,
         db_stats=db_stats,
         persistence_enabled=PERSISTENCE_ENABLED
+    )
+
+
+@app.route('/admin/cloud', methods=['GET', 'POST'])
+def admin_cloud():
+    """Interface de configuration du stockage cloud"""
+    if not is_admin():
+        return redirect(url_for('admin_login'))
+    
+    if request.method == 'POST':
+        action = request.form.get('action')
+        
+        if action == 'setup_google_drive':
+            credentials = request.form.get('credentials', '{}')
+            try:
+                json.loads(credentials)  # Valider JSON
+                success = cloud_manager.setup_google_drive(credentials)
+                if success:
+                    log_action('cloud_setup', "Google Drive configure", admin_id=session.get('admin_id'), severity='info')
+            except:
+                log_action('cloud_setup', "Erreur configuration Google Drive", admin_id=session.get('admin_id'), severity='error')
+        
+        elif action == 'setup_dropbox':
+            token = request.form.get('access_token', '')
+            success = cloud_manager.setup_dropbox(token)
+            if success:
+                log_action('cloud_setup', "Dropbox configure", admin_id=session.get('admin_id'), severity='info')
+        
+        elif action == 'setup_ftp':
+            host = request.form.get('host', '')
+            username = request.form.get('username', '')
+            password = request.form.get('password', '')
+            folder = request.form.get('folder', '/oracxpred')
+            success = cloud_manager.setup_ftp(host, username, password, folder)
+            if success:
+                log_action('cloud_setup', "FTP configure", admin_id=session.get('admin_id'), severity='info')
+        
+        elif action == 'sync_now':
+            if CLOUD_STORAGE_ENABLED:
+                success, results = sync_now(DB_PATH)
+                if success:
+                    log_action('cloud_sync', "Synchronisation cloud reussie", admin_id=session.get('admin_id'), severity='info')
+                else:
+                    log_action('cloud_sync', "Erreur synchronisation cloud", admin_id=session.get('admin_id'), severity='warning')
+        
+        elif action == 'toggle_auto_sync':
+            enabled = request.form.get('auto_sync') == 'on'
+            cloud_manager.config["auto_sync"]["enabled"] = enabled
+            cloud_manager.save_config()
+            log_action('cloud_config', f"Auto-sync {'active' if enabled else 'desactive'}", admin_id=session.get('admin_id'), severity='info')
+    
+    # Récupérer le statut cloud
+    cloud_status = get_cloud_status() if CLOUD_STORAGE_ENABLED else None
+    
+    return render_template_string(ADMIN_CLOUD_TEMPLATE,
+        cloud_status=cloud_status,
+        cloud_enabled=CLOUD_STORAGE_ENABLED
     )
 
 
@@ -3515,6 +3601,7 @@ ADMIN_DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         <div class="top-links">
             <a href="/">← Retour au site</a>
             <a href="/admin/backup">💾 Backups</a>
+            <a href="/admin/cloud">☁️ Cloud</a>
             <a href="/admin/logout">Déconnexion</a>
         </div>
     </div>
@@ -7130,26 +7217,26 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     host = os.environ.get("HOST", "0.0.0.0")
 
-    print("🚀 SYSTÈME DE PRÉDICTION RÉVOLUTIONNAIRE")
+    print("SYSTEME DE PREDICTION REVOLUTIONNAIRE")
     print("=" * 50)
-    print(f"⚽ Application démarrée sur {host}:{port}")
+    print(f"Application demarree sur {host}:{port}")
 
     if QUANTIQUE_DISPONIBLE:
-        print("✅ Système Quantique activé")
+        print("Systeme Quantique active")
     else:
-        print("⚠️ Mode simplifié activé")
-
+        print("Systeme Quantique non disponible")
+    
     if NUMPY_DISPONIBLE:
-        print("✅ NumPy activé - Calculs avancés")
+        print("NumPy disponible")
     else:
-        print("⚠️ NumPy non disponible")
-
-    print("🎯 Toutes les fonctionnalités sont opérationnelles !")
+        print("NumPy non disponible")
+    
+    print("Toutes les fonctionnalités sont opérationnelles !")
     print("=" * 50)
 
     try:
         app.run(host=host, port=port, debug=False, threaded=True)
     except Exception as e:
-        print(f"❌ Erreur de démarrage: {e}")
+        print(f"Erreur de demarrage: {e}")
         import traceback
         traceback.print_exc()

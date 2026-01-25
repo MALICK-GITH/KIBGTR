@@ -17,49 +17,49 @@ from models import db, User, SystemLog
 
 def show_status():
     """Affiche le statut actuel du système de persistance"""
-    print("📊 STATUT DU SYSTÈME DE PERSISTANCE")
+    print("STATUT DU SYSTEME DE PERSISTANCE")
     print("=" * 50)
     
     # Vérifier l'intégrité
     is_valid, message = db_manager.verify_database_integrity()
-    status = "✅" if is_valid else "❌"
+    status = "OK" if is_valid else "ERREUR"
     print(f"{status} Intégrité: {message}")
     
     # Statistiques
     stats = db_manager.get_database_stats()
     if stats:
-        print(f"📁 Base de données: {stats['path']}")
-        print(f"💾 Taille: {stats['size_mb']} MB")
-        print(f"📅 Dernière modification: {stats['modified']}")
-        print(f"📋 Tables: {len(stats['tables'])}")
+        print(f"Base de données: {stats['path']}")
+        print(f"Taille: {stats['size_mb']} MB")
+        print(f"Dernière modification: {stats['modified']}")
+        print(f"Tables: {len(stats['tables'])}")
         
         for table, count in stats['tables'].items():
-            print(f"   📊 {table}: {count} enregistrements")
+            print(f"   {table}: {count} enregistrements")
     
     # Backups disponibles
     backups = db_manager.list_backups()
-    print(f"💾 Backups disponibles: {len(backups)}")
+    print(f"Backups disponibles: {len(backups)}")
     
     if backups:
-        print("   📋 Derniers backups:")
+        print("   Derniers backups:")
         for i, backup in enumerate(backups[:3]):
             print(f"   {i+1}. {backup['name']} ({backup['created'].strftime('%d/%m/%Y %H:%M')})")
 
 def create_backup():
     """Crée un backup manuel"""
-    print("💾 CRÉATION D'UN BACKUP MANUEL")
+    print("CREATION D'UN BACKUP MANUEL")
     print("=" * 30)
     
     success = db_manager.create_backup()
     if success:
-        print("✅ Backup créé avec succès!")
+        print("Backup créé avec succès!")
         
         # Afficher les backups récents
         backups = db_manager.list_backups()
         if backups:
-            print(f"📋 Dernier backup: {backups[0]['name']}")
+            print(f"Dernier backup: {backups[0]['name']}")
     else:
-        print("❌ Échec de la création du backup")
+        print("Echec de la création du backup")
 
 def list_backups():
     """Liste tous les backups disponibles"""
