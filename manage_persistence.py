@@ -134,7 +134,7 @@ def export_data():
     print("=" * 25)
     
     try:
-        from fifa1 import app
+        from app import app
         
         with app.app_context():
             # Exporter les utilisateurs

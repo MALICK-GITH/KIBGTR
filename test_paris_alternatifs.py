@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from fifa1 import SystemePredictionParisAlternatifs
+from app import SystemePredictionParisAlternatifs
 
 def test_systeme_paris_alternatifs():
     """Test du système spécialisé pour paris alternatifs"""

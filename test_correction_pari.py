@@ -135,13 +135,13 @@ def test_structure_compatibilite():
     return True
 
 def test_methodes_analyse():
-    """🔍 TEST DES MÉTHODES D'ANALYSE"""
+    """ TEST DES MÉTHODES D'ANALYSE"""
     
-    print("\n🔍 TEST MÉTHODES D'ANALYSE")
+    print("\n TEST MÉTHODES D'ANALYSE")
     print("-" * 30)
     
     try:
-        from fifa1 import SystemePredictionParisAlternatifs
+        from app import SystemePredictionParisAlternatifs
         
         # Données de test
         paris_test = [

@@ -3,7 +3,7 @@
 Test pour vérifier que le système utilise maintenant les VRAIES cotes de l'API
 """
 
-from fifa1 import SystemePredictionUnifie, calculer_probabilites_depuis_cotes
+from app import SystemePredictionUnifie, calculer_probabilites_depuis_cotes
 
 def test_vraies_cotes():
     print("🎯 TEST UTILISATION DES VRAIES COTES")

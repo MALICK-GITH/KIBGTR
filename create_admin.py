@@ -13,7 +13,7 @@ if sys.platform == 'win32':
     except:
         pass
 
-from fifa1 import app, db
+from app import app, db
 from models import User
 from datetime import datetime
 

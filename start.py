@@ -41,7 +41,7 @@ def demarrer_application():
     
     # Import et lancement de l'application
     try:
-        from fifa1 import app
+        from app import app
         port = int(os.environ.get("PORT", 5000))
         
         print(f"🌐 Application disponible sur port {port}")

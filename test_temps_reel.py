@@ -3,7 +3,7 @@
 Test du système avec données temps réel
 """
 
-from fifa1 import SystemePredictionParisAlternatifs, generer_predictions_alternatives
+from app import SystemePredictionParisAlternatifs, generer_predictions_alternatives
 
 def test_temps_reel():
     print("⏱️ TEST SYSTÈME AVEC DONNÉES TEMPS RÉEL")

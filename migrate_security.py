@@ -4,7 +4,7 @@ Script de migration pour sécuriser les mots de passe existants
 Ce script hash les mots de passe en clair avec bcrypt
 """
 
-from fifa1 import app, db
+from app import app, db
 from models import User
 from security import hash_password
 

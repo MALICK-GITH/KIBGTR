@@ -3,7 +3,7 @@
 Test final pour vérifier que toutes les corrections fonctionnent
 """
 
-from fifa1 import SystemePredictionParisAlternatifs, generer_predictions_alternatives
+from app import SystemePredictionParisAlternatifs, generer_predictions_alternatives
 
 def test_correction_finale():
     print("🔧 TEST CORRECTION FINALE - SYSTÈME TEMPS RÉEL")

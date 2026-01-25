@@ -13,7 +13,7 @@ def create_test_users():
     """Créer des utilisateurs de test"""
     try:
         # Importer l'application
-        from fifa1 import app, db, User, admin_manager
+        from app import app, db, User, admin_manager
         
         with app.app_context():
             print("🧪 Création d'utilisateurs de test...")

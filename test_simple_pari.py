@@ -5,14 +5,14 @@
 """
 
 def test_simple():
-    print("🔧 TEST SIMPLE - ERREUR 'score_final'")
+    print(" TEST SIMPLE - ERREUR 'score_final'")
     print("=" * 45)
 
     try:
-        from fifa1 import ia_prediction_multi_facteurs
+        from app import ia_prediction_multi_facteurs
         from bots_alternatifs import systeme_ia_alternatifs_only
 
-        print("📊 Test de la fonction IA multi-facteurs...")
+        print(" Test de la fonction IA multi-facteurs...")
 
         # Test de l'ancienne fonction
         ia_result = ia_prediction_multi_facteurs("AS Monaco", "Arsenal", "FC 25", [], 0, 0, 1)

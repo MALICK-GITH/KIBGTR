@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if __name__ == "__main__":
     try:
         print("🚀 Démarrage du système révolutionnaire...")
-        from fifa1 import app
+        from app import app
         
         port = int(os.environ.get("PORT", 10000))
         host = os.environ.get("HOST", "0.0.0.0")

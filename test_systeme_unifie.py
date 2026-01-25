@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from fifa1 import SystemePredictionUnifie, calculer_force_equipe
+from app import SystemePredictionUnifie, calculer_force_equipe
 
 def test_systeme_unifie():
     """Test du système de prédiction unifié"""

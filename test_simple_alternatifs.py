@@ -3,7 +3,7 @@
 Test simple du système spécialisé pour les paris alternatifs
 """
 
-from fifa1 import SystemePredictionParisAlternatifs
+from app import SystemePredictionParisAlternatifs
 
 def test_simple():
     print("🎲 TEST SIMPLE - SYSTÈME PARIS ALTERNATIFS")

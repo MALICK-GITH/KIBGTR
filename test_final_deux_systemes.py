@@ -3,7 +3,7 @@
 Test final des deux systèmes unifiés
 """
 
-from fifa1 import SystemePredictionUnifie, SystemePredictionParisAlternatifs, generer_predictions_alternatives
+from app import SystemePredictionUnifie, SystemePredictionParisAlternatifs, generer_predictions_alternatives
 
 def test_deux_systemes():
     print("🎯🎲 TEST FINAL - DEUX SYSTÈMES UNIFIÉS")

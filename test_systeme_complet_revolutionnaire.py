@@ -6,7 +6,7 @@ Démonstration de toutes les capacités du système de prédiction le plus avanc
 """
 
 from systeme_prediction_quantique import SystemePredictionQuantique
-from fifa1 import (
+from app import (
     detecter_value_bets, 
     calculer_mise_optimale_kelly, 
     analyser_evolution_cotes_temps_reel,

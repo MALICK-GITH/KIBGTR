@@ -3,7 +3,7 @@
 Test rapide pour vérifier la correction du module re
 """
 
-from fifa1 import SystemePredictionParisAlternatifs, generer_predictions_alternatives
+from app import SystemePredictionParisAlternatifs, generer_predictions_alternatives
 
 def test_correction():
     print("🔧 TEST DE CORRECTION - MODULE RE")
