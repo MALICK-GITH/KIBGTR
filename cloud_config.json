@@ -11,10 +11,10 @@
       "folder_path": "/ORACXPRED"
     },
     "ftp": {
-      "enabled": false,
-      "host": null,
-      "username": null,
-      "password": null,
+      "enabled": true,
+      "host": "",
+      "username": "",
+      "password": "",
       "folder": "/oracxpred"
     }
   },

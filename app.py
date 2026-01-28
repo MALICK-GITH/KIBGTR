@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-from flask import Flask, request, render_template_string, session, redirect, url_for
+from flask import Flask, request, render_template_string, session, redirect, url_for, send_from_directory
 import requests
 import os
+import uuid
 from datetime import datetime, timedelta
 import random
 import re
@@ -37,14 +38,14 @@ except ImportError:
 
 # Import du système quantique simplifié (compatible Render)
 try:
-    from systeme_prediction_quantique import SystemePredictionQuantique
+    from systeme_prediction_simple import SystemePredictionQuantique
     QUANTIQUE_DISPONIBLE = True
-    print("Systeme quantique complet charge")
+    print("Systeme quantique simplifie charge (compatible Render)")
 except ImportError:
     try:
-        from systeme_prediction_simple import SystemePredictionQuantique
+        from systeme_prediction_quantique import SystemePredictionQuantique
         QUANTIQUE_DISPONIBLE = True
-        print("Systeme quantique simplifie charge (compatible Render)")
+        print("Systeme quantique complet charge")
     except ImportError:
         QUANTIQUE_DISPONIBLE = False
         print("Aucun systeme quantique disponible")
@@ -73,6 +74,15 @@ try:
 except ImportError:
     BOTS_ALTERNATIFS_DISPONIBLES = False
     print("Bots alternatifs non disponibles")
+
+# Import du système SNAKE WIN
+try:
+    from snake_win_system import SnakeWinSystem
+    SNAKE_WIN_DISPONIBLE = True
+    print("🐍 Système Snake Win charge")
+except ImportError:
+    SNAKE_WIN_DISPONIBLE = False
+    print("❌ Système Snake Win non disponible")
 
 # Import optionnel de numpy (désactivé pour Render)
 NUMPY_DISPONIBLE = False
@@ -118,6 +128,13 @@ app = Flask(__name__)
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 
+# Créer le dossier pour les photos de profil
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', 'profiles')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB max
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
 # Configuration de la base de données avec chemin absolu
 DB_PATH = os.path.join(DATA_DIR, 'oracxpred.db')
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
@@ -127,6 +144,72 @@ db.init_app(app)
 
 with app.app_context():
     db.create_all()
+    
+    # Initialiser le système Snake Win
+    snake_win_system = None
+    if SNAKE_WIN_DISPONIBLE:
+        try:
+            snake_win_system = SnakeWinSystem()
+            print("🐍 Système Snake Win initialisé avec succès")
+        except Exception as e:
+            print(f"❌ Erreur initialisation Snake Win: {e}")
+            snake_win_system = None
+    
+    # Initialiser automatiquement le compte admin si nécessaire
+    try:
+        admin = User.query.filter_by(username='ADMIN').first()
+        if not admin:
+            # Créer l'admin avec mot de passe hashé
+            if SECURITY_ENABLED:
+                from security import create_admin_user
+                admin = create_admin_user('ADMIN', 'ADMIN123', 'admin@oracxpred.com')
+                print("✅ Compte admin créé automatiquement (mot de passe hashé)")
+            else:
+                # Mode compatibilité sans sécurité
+                admin = User(
+                    username='ADMIN',
+                    email='admin@oracxpred.com',
+                    password='ADMIN123',
+                    is_admin=True,
+                    is_approved=True,
+                    subscription_plan='vip',
+                    subscription_status='active',
+                    created_at=datetime.utcnow()
+                )
+                db.session.add(admin)
+                db.session.commit()
+                print("✅ Compte admin créé automatiquement (mode compatibilité)")
+        else:
+            # Vérifier et corriger l'admin existant si nécessaire
+            needs_fix = False
+            if not admin.is_approved:
+                admin.is_approved = True
+                needs_fix = True
+            if admin.subscription_plan != 'vip':
+                admin.subscription_plan = 'vip'
+                needs_fix = True
+            if admin.subscription_status != 'active':
+                admin.subscription_status = 'active'
+                needs_fix = True
+            
+            # Corriger le mot de passe si nécessaire (hash si en clair)
+            if SECURITY_ENABLED:
+                from security import hash_password, check_password, is_bcrypt_hash
+                if not is_bcrypt_hash(admin.password):
+                    admin.password = hash_password('ADMIN123')
+                    needs_fix = True
+                    print("✅ Mot de passe admin hashé")
+                elif not check_password('ADMIN123', admin.password):
+                    admin.password = hash_password('ADMIN123')
+                    needs_fix = True
+                    print("✅ Mot de passe admin réinitialisé")
+            
+            if needs_fix:
+                db.session.commit()
+                print("✅ Compte admin corrigé automatiquement")
+    except Exception as e:
+        print(f"⚠️  Erreur lors de l'initialisation de l'admin: {e}")
+        # Ne pas bloquer le démarrage si l'admin ne peut pas être créé
 
 # Initialiser le système de persistance
 if PERSISTENCE_ENABLED:
@@ -155,6 +238,10 @@ except ImportError:
     ADMIN_CLOUD_TEMPLATE = """<!DOCTYPE html><html><head><title>Cloud</title></head><body><h1>Stockage Cloud</h1><p>Template non disponible</p></body></html>"""
 
 # ========== FONCTIONS UTILITAIRES ==========
+
+def allowed_file(filename):
+    """Vérifie si le fichier a une extension autorisée"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def get_current_user():
     """Récupère l'utilisateur actuellement connecté"""
@@ -625,6 +712,11 @@ def admin_cloud():
     )
 
 
+@app.route('/static/uploads/profiles/<filename>')
+def uploaded_file(filename):
+    """Route pour servir les photos de profil uploadées"""
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 @app.route('/register', methods=['GET', 'POST'])
 def user_register():
     if request.method == 'POST':
@@ -632,7 +724,22 @@ def user_register():
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '').strip()
         confirm_password = request.form.get('confirm_password', '').strip()
-        profile_photo = request.form.get('profile_photo', '').strip()
+        
+        profile_photo_path = None
+        
+        # Gérer l'upload de la photo de profil
+        if 'profile_photo' in request.files:
+            file = request.files['profile_photo']
+            if file and file.filename != '':
+                if allowed_file(file.filename):
+                    # Générer un nom de fichier unique
+                    filename = f"{uuid.uuid4().hex}_{username}_{file.filename}"
+                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                    file.save(filepath)
+                    # Stocker le chemin relatif pour l'URL
+                    profile_photo_path = f"/static/uploads/profiles/{filename}"
+                else:
+                    return render_template_string(USER_REGISTER_TEMPLATE, error="Format de fichier non autorisé. Utilisez PNG, JPG, JPEG, GIF ou WEBP")
 
         if not username or not password:
             return render_template_string(USER_REGISTER_TEMPLATE, error="Nom d'utilisateur et mot de passe requis")
@@ -647,9 +754,11 @@ def user_register():
             username=username,
             email=email or None,
             password=hash_password(password) if SECURITY_ENABLED else password,
-            profile_photo=profile_photo or None,
+            profile_photo=profile_photo_path,
             is_admin=False,
-            is_approved=False,
+            is_approved=True,  # Compte approuvé automatiquement
+            subscription_plan='free',
+            subscription_status='inactive',  # Mais reste inactif jusqu'à activation par admin
         )
         db.session.add(user)
         db.session.commit()
@@ -969,8 +1078,21 @@ def traduire_pari_type_groupe(type_pari, groupe, param, team1=None, team2=None, 
     return f"Pari G{groupe}-T{type_pari}" + (f"-P{param}" if param is not None else "")
 
 @app.route('/match/<int:match_id>')
-@require_paid_access
 def match_details(match_id):
+    """Page de détails d'un match - Affiche les offres si compte inactif"""
+    user = get_current_user()
+    
+    # Si l'utilisateur n'est pas connecté, rediriger vers login
+    if not user:
+        return redirect(url_for('user_login'))
+    
+    # Si le compte est inactif, afficher les offres et le tutoriel
+    if user.subscription_status != 'active':
+        return render_template_string(SUBSCRIPTION_OFFERS_TEMPLATE, 
+                                     current_user=user,
+                                     match_id=match_id)
+    
+    # Si le compte est actif, afficher les détails du match
     try:
         # Récupérer les données de l'API 1xbet
         api_url = "https://1xbet.com/service-api/LiveFeed/Get1x2_VZip?sports=85&count=40&lng=fr&gr=285&mode=4&country=96&getEmpty=true&virtualSports=true&noFilterBlockEvent=true"
@@ -1317,6 +1439,22 @@ def match_details(match_id):
         evolution_cotes = analyser_evolution_cotes_temps_reel(paris_cotes_valides)
         ia_analyse = bot_ia
 
+        # 🐍 SYSTÈME SNAKE WIN (si disponible)
+        prediction_snake_win = None
+        if SNAKE_WIN_DISPONIBLE and snake_win_system:
+            try:
+                contexte_snake_win = {'score1': score1, 'score2': score2, 'minute': minute}
+                prediction_snake_win = snake_win_system.analyser_match_snake_win(
+                    team1, team2, league, odds_data, contexte_snake_win, paris_alternatifs_filtres
+                )
+            except Exception as e:
+                print(f"❌ Erreur système Snake Win: {e}")
+                prediction_snake_win = {
+                    "systeme": "SNAKE WIN",
+                    "erreur": "Erreur lors de l'analyse",
+                    "score_snake_win": {"score_total": 0, "niveau": "❌ INDISPONIBLE"}
+                }
+
         # 🎲 SYSTÈME QUANTIQUE SPÉCIALISÉ PARIS ALTERNATIFS (si disponible)
         if QUANTIQUE_DISPONIBLE:
             systeme_quantique = SystemePredictionQuantique()
@@ -1505,6 +1643,41 @@ def match_details(match_id):
                     🤖 {analyse_bots.get('nb_bots_consultes', 0)} Bots Consultés | 🤝 {analyse_bots.get('nb_bots_accord', 0)} Bots d'Accord | 🎲 Cotes 1.399-3.0
                 </div>
             </div>"""
+
+        # HTML pour le système Snake Win
+        snake_win_html = ""
+        if prediction_snake_win and prediction_snake_win.get("score_snake_win"):
+            score_snake = prediction_snake_win["score_snake_win"]
+            snake_win_html = f"""
+        <div style='background: linear-gradient(135deg, #27ae60 0%, #2ecc71 50%, #16a085 100%); color: white; padding: 25px; border-radius: 15px; margin: 20px 0; box-shadow: 0 10px 30px rgba(39, 174, 96, 0.3);'>
+            <h3>🐍 SYSTÈME SNAKE WIN</h3>
+            <div style='display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 20px;'>
+                <div style='text-align: center; background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px;'>
+                    <div style='font-size: 48px; font-weight: bold; margin-bottom: 10px;'>{score_snake.get('score_total', 0)}</div>
+                    <div style='font-size: 14px; opacity: 0.9;'>SCORE SNAKE WIN</div>
+                </div>
+                <div style='text-align: center; background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px;'>
+                    <div style='font-size: 48px; font-weight: bold; margin-bottom: 10px;'>{prediction_snake_win.get('confiance', 0):.0f}%</div>
+                    <div style='font-size: 14px; opacity: 0.9;'>CONFIANCE</div>
+                </div>
+                <div style='text-align: center; background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px;'>
+                    <div style='font-size: 18px; font-weight: bold; margin-bottom: 10px;'>{prediction_snake_win.get('prediction_principale', 'N/A')}</div>
+                    <div style='font-size: 14px; opacity: 0.9;'>PRÉDICTION</div>
+                </div>
+            </div>
+            <div style='margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.2); border-radius: 8px; text-align: center;'>
+                <strong style='color: {score_snake.get('couleur', '#ffffff')}; font-size: 18px;'>{score_snake.get('niveau', 'NIVEAU INCONNU')}</strong>
+            </div>
+            <div style='margin-top: 15px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 8px;'>
+                <div style='font-weight: bold; margin-bottom: 10px;'>🎯 RECOMMANDATIONS SNAKE WIN:</div>
+                <div style='font-size: 14px;'>{' | '.join(prediction_snake_win.get('recommandations', [])[:3])}</div>
+            </div>
+            <div style='margin-top: 15px; font-size: 12px; text-align: center; opacity: 0.8;'>
+                📊 Modèles: {', '.join(prediction_snake_win.get('score_snake_win', {}).get('sources', []))} | 
+                🎯 Contexte: {score_snake.get('score_contexte', 0)} pts | 
+                💰 Paris: {score_snake.get('score_paris', 0)} pts
+            </div>
+        </div>"""
 
         # HTML pour le système quantique révolutionnaire
         pred_quantique = prediction_quantique['prediction_finale']
@@ -1843,6 +2016,7 @@ def match_details(match_id):
                 </div>
 
                 {alliance_html}
+                {snake_win_html}
                 {maitre_html}
                 {value_bets_html}
                 {evolution_html}
@@ -1993,6 +2167,7 @@ def match_details(match_id):
                 </table>
                 <div class="contact-box">
                     <b>Contact & Services :</b><br>
+                    📱 WhatsApp : <a href="https://wa.me/2250500448208" target="_blank">+225 05 00 44 82 08</a><br>
                     📬 Inbox Telegram : <a href="https://t.me/Roidesombres225" target="_blank">@Roidesombres225</a><br>
                     📢 Canal Telegram : <a href="https://t.me/SOLITAIREHACK" target="_blank">SOLITAIREHACK</a><br>
                     🎨 Je suis aussi concepteur graphique et créateur de logiciels.<br>
@@ -3877,7 +4052,7 @@ USER_REGISTER_TEMPLATE = """<!DOCTYPE html>
             {% if error %}
             <div class="error">{{ error }}</div>
             {% endif %}
-            <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
                 <div class="form-group">
                     <label for="username">👤 Nom d'utilisateur</label>
                     <input type="text" id="username" name="username" required autofocus>
@@ -3887,9 +4062,28 @@ USER_REGISTER_TEMPLATE = """<!DOCTYPE html>
                     <input type="email" id="email" name="email">
                 </div>
                 <div class="form-group">
-                    <label for="profile_photo">🖼️ URL photo de profil (optionnel)</label>
-                    <input type="text" id="profile_photo" name="profile_photo" placeholder="https://exemple.com/photo.jpg">
+                    <label for="profile_photo">🖼️ Photo de profil (optionnel)</label>
+                    <input type="file" id="profile_photo" name="profile_photo" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp">
+                    <small style="color:#666; font-size:12px; display:block; margin-top:5px;">💡 Choisissez une photo depuis votre galerie (PNG, JPG, GIF, WEBP - max 5MB)</small>
+                    <div id="photo-preview" style="margin-top: 10px; display: none;">
+                        <img id="preview-img" src="" alt="Aperçu" style="max-width: 150px; max-height: 150px; border-radius: 50%; border: 2px solid #667eea; object-fit: cover;">
+                    </div>
                 </div>
+                <script>
+                    document.getElementById('profile_photo').addEventListener('change', function(e) {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = function(e) {
+                                document.getElementById('preview-img').src = e.target.result;
+                                document.getElementById('photo-preview').style.display = 'block';
+                            }
+                            reader.readAsDataURL(file);
+                        } else {
+                            document.getElementById('photo-preview').style.display = 'none';
+                        }
+                    });
+                </script>
                 <div class="form-group">
                     <label for="password">🔒 Mot de passe</label>
                     <input type="password" id="password" name="password" required>
@@ -4327,6 +4521,360 @@ SUBSCRIPTION_PLANS_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>"""
 
+SUBSCRIPTION_OFFERS_TEMPLATE = """<!DOCTYPE html>
+<html><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Activation de Compte - ORACXPRED</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .logo-container {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo-main {
+            font-size: 48px;
+            font-weight: 900;
+            color: #fff;
+            text-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            letter-spacing: 4px;
+            margin-bottom: 8px;
+        }
+        .logo-sub {
+            font-size: 24px;
+            font-weight: 300;
+            color: rgba(255,255,255,0.9);
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            letter-spacing: 6px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .info-box {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 16px;
+            margin-bottom: 30px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 18px;
+            box-shadow: 0 6px 20px rgba(255, 152, 0, 0.3);
+        }
+        .info-box .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        .tutorial-section {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        .tutorial-title {
+            font-size: 32px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .tutorial-step {
+            background: #f8f9fa;
+            border-left: 5px solid #667eea;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-radius: 12px;
+        }
+        .tutorial-step h3 {
+            font-size: 22px;
+            color: #667eea;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .tutorial-step p {
+            font-size: 16px;
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+        .tutorial-step .highlight {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            display: inline-block;
+            font-weight: 600;
+            margin: 5px 5px 5px 0;
+        }
+        .demo-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 12px;
+            border: none;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+            margin: 10px 5px;
+            transition: all 0.3s;
+        }
+        .demo-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+        }
+        .plans-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        .plan-card {
+            background: white;
+            border-radius: 20px;
+            padding: 35px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            text-align: center;
+            transition: transform 0.3s;
+            position: relative;
+        }
+        .plan-card:hover {
+            transform: translateY(-8px);
+        }
+        .plan-card.featured {
+            border: 4px solid #667eea;
+            transform: scale(1.05);
+        }
+        .plan-name {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .plan-price {
+            font-size: 42px;
+            font-weight: 900;
+            color: #333;
+            margin: 20px 0;
+        }
+        .plan-price .currency {
+            font-size: 20px;
+            vertical-align: top;
+        }
+        .plan-price .cfa {
+            font-size: 16px;
+            color: #666;
+            font-weight: 400;
+        }
+        .plan-features {
+            list-style: none;
+            margin: 25px 0;
+            text-align: left;
+        }
+        .plan-features li {
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 15px;
+        }
+        .plan-features li:before {
+            content: "✓ ";
+            color: #4caf50;
+            font-weight: 700;
+            margin-right: 10px;
+        }
+        .contact-info {
+            background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 16px;
+            text-align: center;
+            margin-top: 30px;
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.3);
+        }
+        .contact-info h3 {
+            font-size: 24px;
+            margin-bottom: 15px;
+        }
+        .contact-info p {
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        .contact-info a {
+            color: white;
+            text-decoration: underline;
+            font-weight: 600;
+        }
+        .back-link {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .back-link a {
+            color: rgba(255,255,255,0.9);
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 600;
+            padding: 12px 24px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 12px;
+            display: inline-block;
+        }
+        .back-link a:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        @media (max-width: 768px) {
+            .logo-main { font-size: 36px; }
+            .logo-sub { font-size: 18px; }
+            .plans-grid { grid-template-columns: 1fr; }
+            .plan-card.featured { transform: scale(1); }
+            .tutorial-section { padding: 25px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="logo-container">
+        <div class="logo-main">ORACXPRED</div>
+        <div class="logo-sub">METAPHORE</div>
+    </div>
+    <div class="container">
+        <div class="info-box">
+            <div class="icon">🔒</div>
+            <div>Votre compte est approuvé mais inactif. Activez votre abonnement pour accéder aux prédictions détaillées !</div>
+        </div>
+
+        <!-- Section Tutoriel -->
+        <div class="tutorial-section">
+            <h2 class="tutorial-title">📚 Guide d'Utilisation - Comment accéder aux prédictions</h2>
+            
+            <div class="tutorial-step">
+                <h3>🎯 Étape 1 : Comprendre le bouton "Détails"</h3>
+                <p>Le bouton <span class="highlight">"Détails"</span> que vous voyez sur chaque match renferme toutes les prédictions avancées de notre système IA.</p>
+                <p>Ce bouton vous donne accès à :</p>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li>✅ Prédictions détaillées du match</li>
+                    <li>✅ Analyses statistiques complètes</li>
+                    <li>✅ Probabilités calculées par notre IA</li>
+                    <li>✅ Recommandations de paris</li>
+                    <li>✅ Graphiques et visualisations</li>
+                </ul>
+            </div>
+
+            <div class="tutorial-step">
+                <h3>🔓 Étape 2 : Activer votre compte</h3>
+                <p>Pour accéder aux prédictions, vous devez activer votre compte en choisissant un plan d'abonnement ci-dessous.</p>
+                <p>Une fois votre compte activé par l'administrateur, vous pourrez cliquer sur <span class="highlight">"Détails"</span> et voir toutes les prédictions !</p>
+            </div>
+
+            <div class="tutorial-step">
+                <h3>💡 Étape 3 : Utiliser les prédictions</h3>
+                <p>Après activation, voici comment utiliser le système :</p>
+                <ol style="margin-left: 20px; margin-top: 10px; line-height: 2;">
+                    <li>Parcourez la liste des matchs disponibles</li>
+                    <li>Cliquez sur le bouton <span class="highlight">"Détails"</span> du match qui vous intéresse</li>
+                    <li>Consultez les prédictions et analyses détaillées</li>
+                    <li>Utilisez les recommandations pour vos paris</li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- Section Offres -->
+        <h2 style="text-align: center; color: white; font-size: 36px; margin-bottom: 30px; text-shadow: 0 2px 10px rgba(0,0,0,0.3);">
+            💎 Choisissez votre plan d'abonnement
+        </h2>
+        
+        <div class="plans-grid">
+            <div class="plan-card">
+                <div class="plan-name">⭐ Plan Essai</div>
+                <div class="plan-price">
+                    <span class="currency">5 000</span> FCFA
+                    <div class="cfa">1 semaine</div>
+                </div>
+                <ul class="plan-features">
+                    <li>3 prédictions par jour</li>
+                    <li>Accès au bouton "Détails"</li>
+                    <li>Prédictions avancées</li>
+                    <li>Analyses complètes</li>
+                    <li>Durée : 7 jours</li>
+                </ul>
+                <a href="https://wa.me/2250500448208?text=Bonjour%2C%20je%20souhaite%20souscrire%20au%20Plan%20Essai%20%285%20000%20FCFA%20-%201%20semaine%29" target="_blank" class="demo-button" style="background: linear-gradient(135deg, #4caf50 0%, #45a049 100%); text-decoration: none; display: inline-block; width: 100%; text-align: center;">
+                    📱 Contacter l'admin
+                </a>
+            </div>
+            
+            <div class="plan-card featured">
+                <div class="plan-name">💎 Plan Mensuel</div>
+                <div class="plan-price">
+                    <span class="currency">10 000</span> FCFA
+                    <div class="cfa">1 mois</div>
+                </div>
+                <ul class="plan-features">
+                    <li>Prédictions par jour</li>
+                    <li>Accès illimité au bouton "Détails"</li>
+                    <li>Toutes les prédictions avancées</li>
+                    <li>Historique personnel complet</li>
+                    <li>Graphiques complets</li>
+                    <li>Analyses détaillées</li>
+                    <li>Durée : 30 jours</li>
+                </ul>
+                <a href="https://wa.me/2250500448208?text=Bonjour%2C%20je%20souhaite%20souscrire%20au%20Plan%20Mensuel%20%2810%20000%20FCFA%20-%201%20mois%29" target="_blank" class="demo-button" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); text-decoration: none; display: inline-block; width: 100%; text-align: center;">
+                    📱 Contacter l'admin
+                </a>
+            </div>
+            
+            <div class="plan-card">
+                <div class="plan-name">👑 Plan 2 Mois</div>
+                <div class="plan-price">
+                    <span class="currency">18 000</span> FCFA
+                    <div class="cfa">2 mois</div>
+                </div>
+                <ul class="plan-features">
+                    <li>Prédictions par jour</li>
+                    <li>Accès illimité au bouton "Détails"</li>
+                    <li>Toutes les prédictions avancées</li>
+                    <li>Support prioritaire</li>
+                    <li>Analytics avancés</li>
+                    <li>Alertes en temps réel</li>
+                    <li>Durée : 60 jours</li>
+                    <li>Économie : 2 000 FCFA</li>
+                </ul>
+                <a href="https://wa.me/2250500448208?text=Bonjour%2C%20je%20souhaite%20souscrire%20au%20Plan%202%20Mois%20%2818%20000%20FCFA%20-%202%20mois%29" target="_blank" class="demo-button" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); text-decoration: none; display: inline-block; width: 100%; text-align: center;">
+                    📱 Contacter l'admin
+                </a>
+            </div>
+        </div>
+
+        <div class="contact-info">
+            <h3>📞 Contactez l'administrateur pour activer votre compte</h3>
+            <p>📱 WhatsApp : <a href="https://wa.me/2250500448208" target="_blank">+225 05 00 44 82 08</a></p>
+            <p>📬 Telegram : <a href="https://t.me/Roidesombres225" target="_blank">@Roidesombres225</a></p>
+            <p style="margin-top: 15px; font-size: 14px; opacity: 0.9;">
+                Après paiement, l'administrateur activera votre compte et vous pourrez accéder à toutes les prédictions !
+            </p>
+        </div>
+        
+        <div class="back-link">
+            <a href="/">← Retour à l'accueil</a>
+        </div>
+    </div>
+</body>
+</html>"""
+
 ORACX_ADMIN_TEMPLATE = """<!DOCTYPE html>
 <html><head>
     <meta charset="utf-8">
@@ -4668,14 +5216,14 @@ TEMPLATE = """<!DOCTYPE html>
         /* Section Profil Utilisateur */
         .user-profile-section {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 20px;
-            padding: 30px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
+            border-radius: 16px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
             color: white;
             display: flex;
             align-items: center;
-            gap: 25px;
+            gap: 15px;
             animation: slideInDown 0.6s ease-out;
         }
         @keyframes slideInDown {
@@ -4689,28 +5237,30 @@ TEMPLATE = """<!DOCTYPE html>
             }
         }
         .user-avatar {
-            width: 100px;
-            height: 100px;
+            width: 60px;
+            height: 60px;
             border-radius: 50%;
-            border: 4px solid rgba(255,255,255,0.3);
+            border: 3px solid rgba(255,255,255,0.5);
             object-fit: cover;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             transition: transform 0.3s;
+            cursor: pointer;
         }
         .user-avatar:hover {
-            transform: scale(1.1);
+            transform: scale(1.15);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.3);
         }
         .user-info {
             flex: 1;
         }
         .user-name {
-            font-size: 28px;
+            font-size: 20px;
             font-weight: 700;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
             text-shadow: 0 2px 10px rgba(0,0,0,0.2);
         }
         .user-details {
-            font-size: 16px;
+            font-size: 13px;
             opacity: 0.95;
             margin-top: 5px;
         }
@@ -4737,13 +5287,16 @@ TEMPLATE = """<!DOCTYPE html>
             box-shadow: 0 6px 20px rgba(0,0,0,0.2);
         }
         .default-avatar {
-            width: 100px;
-            height: 100px;
+            width: 60px;
+            height: 60px;
             border-radius: 50%;
             background: rgba(255,255,255,0.2);
             display: flex;
             align-items: center;
             justify-content: center;
+            font-size: 30px;
+            border: 3px solid rgba(255,255,255,0.5);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             font-size: 40px;
             border: 4px solid rgba(255,255,255,0.3);
             box-shadow: 0 8px 20px rgba(0,0,0,0.2);
@@ -4978,6 +5531,7 @@ TEMPLATE = """<!DOCTYPE html>
         </tbody>
     </table>
     <div class="contact-box">
+        <span class="icon">📱</span> WhatsApp : <a href="https://wa.me/2250500448208" target="_blank">+225 05 00 44 82 08</a><br>
         <span class="icon">📬</span> Inbox Telegram : <a href="https://t.me/Roidesombres225" target="_blank">@Roidesombres225</a><br>
         <span class="icon">📢</span> Canal Telegram : <a href="https://t.me/SOLITAIREHACK" target="_blank">SOLITAIREHACK</a><br>
         <span class="icon">🎨</span> Je suis aussi concepteur graphique et créateur de logiciels.<br>
