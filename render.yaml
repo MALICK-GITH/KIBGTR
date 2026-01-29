@@ -5,7 +5,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python app_render.py
+    startCommand: python app_render_fixed.py
     healthCheckPath: /api/health
     
     # Variables d'environnement de base
