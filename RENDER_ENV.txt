@@ -1,0 +1,58 @@
+# Variables d'environnement Render - ORACXPRED MÉTAPHORE
+# À configurer dans le dashboard Render → Environment Variables
+
+## === Google OAuth Configuration ===
+GOOGLE_CLIENT_ID=623094418745-0hk5n0otigl86rk81r2a384tam665jfl.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=<<VOTRE_CLIENT_SECRET_GOOGLE>>
+GOOGLE_PROJECT_ID=black-resource-485505-v9
+GOOGLE_AUTH_URI=https://accounts.google.com/o/oauth2/auth
+GOOGLE_TOKEN_URI=https://oauth2.googleapis.com/token
+GOOGLE_CERTS_URL=https://www.googleapis.com/oauth2/v1/certs
+
+## === Application Configuration ===
+APP_SECRET=<<SECRET_JWT_32_CARACTERES_MINIMUM>>
+APP_BASE_URL=https://oracxpred-metaphore.onrender.com
+FRONTEND_URL=https://votre-frontend.onrender.com
+
+## === Database Configuration (Render PostgreSQL) ===
+# Render fournit automatiquement DATABASE_URL
+# Format: postgresql://user:pass@host:port/dbname
+
+## === Service Configuration ===
+RENDER_SERVICE_NAME=oracxpred-metaphore
+RENDER_EXTERNAL_URL=https://oracxpred-metaphore.onrender.com
+RENDER_INSTANCE_ID=<<GENERATED_BY_RENDER>>
+
+## === Security Configuration ===
+SESSION_COOKIE_SECURE=true
+SESSION_COOKIE_HTTPONLY=true
+SESSION_COOKIE_SAMESITE=Lax
+CORS_ORIGINS=https://oracxpred-metaphore.onrender.com,https://votre-frontend.onrender.com
+
+## === Backup Configuration ===
+BACKUP_ENABLED=true
+BACKUP_SCHEDULE=0 3 * * *
+BACKUP_RETENTION_DAYS=30
+BACKUP_LOCATION=render_internal
+
+## === Database Pool Configuration ===
+DB_POOL_SIZE=10
+DB_MAX_OVERFLOW=20
+
+## === Environment Settings ===
+FLASK_ENV=production
+FLASK_DEBUG=false
+PYTHON_VERSION=3.12
+PORT=10000
+
+## === Optional Configuration ===
+ADMIN_EMAIL=admin@oracxpred.com
+RATELIMIT_ENABLED=false
+LOG_LEVEL=INFO
+
+## === Important Notes ===
+# 1. DATABASE_URL est automatiquement fourni par Render
+# 2. RENDER_EXTERNAL_URL est automatiquement fourni par Render  
+# 3. RENDER_INSTANCE_ID est automatiquement fourni par Render
+# 4. Ne jamais stocker de secrets dans le code
+# 5. Utiliser le dashboard Render pour toutes les variables sensibles
