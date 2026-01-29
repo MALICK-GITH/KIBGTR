@@ -17,14 +17,9 @@ from app import app
 app.debug = False
 
 # Vercel serverless handler
-def handler(request):
+def handler(environ, start_response):
     """Handler pour Vercel serverless functions"""
-    return app(request.environ, lambda status, headers: None)
+    return app(environ, start_response)
 
 # Exporter pour Vercel
-app_handler = app
-
-# Forcer la configuration de l'application pour Vercel
-if not app.config.get('TESTING'):
-    app.config['TESTING'] = True
-    app.config['DEBUG'] = False
+app_handler = handler
