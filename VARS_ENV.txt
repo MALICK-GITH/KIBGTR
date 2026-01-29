@@ -1,0 +1,28 @@
+# Variables à configurer dans Vercel/Railway/Render
+
+## Google OAuth
+GOOGLE_CLIENT_ID=623094418745-0hk5n0otigl86rk81r2a384tam665jfl.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=<<VOTRE_CLIENT_SECRET_GOOGLE>>
+GOOGLE_PROJECT_ID=black-resource-485505-v9
+GOOGLE_AUTH_URI=https://accounts.google.com/o/oauth2/auth
+GOOGLE_TOKEN_URI=https://oauth2.googleapis.com/token
+GOOGLE_CERTS_URL=https://www.googleapis.com/oauth2/v1/certs
+
+## Application
+APP_SECRET=<<SECRET_JWT_32_CARACTERES_MINIMUM>>
+APP_BASE_URL=https://votre-backend.vercel.app
+FRONTEND_URL=https://votre-frontend.vercel.app
+
+## Base de données
+DATABASE_URL=postgresql://username:password@host:port/database
+
+## Sécurité
+SESSION_COOKIE_SECURE=true
+SESSION_COOKIE_HTTPONLY=true
+SESSION_COOKIE_SAMESITE=Lax
+CORS_ORIGINS=https://votre-frontend.vercel.app
+
+## Environment
+FLASK_ENV=production
+FLASK_DEBUG=false
+PYTHON_VERSION=3.12
