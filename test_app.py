@@ -80,12 +80,12 @@ def test_app_startup():
         
         # Test d'import de l'application
         print("   - Import de l'application...")
-        import fifa1
+        import app
         print("✅ Application importée avec succès")
         
         # Test de création de l'app Flask
         print("   - Vérification de l'instance Flask...")
-        if hasattr(fifa1, 'app') and fifa1.app:
+        if hasattr(app, 'app') and app.app:
             print("✅ Instance Flask créée")
         else:
             print("❌ Instance Flask non trouvée")
@@ -93,7 +93,7 @@ def test_app_startup():
         
         # Test de configuration
         print("   - Vérification de la configuration...")
-        if fifa1.app.config.get('SECRET_KEY'):
+        if app.app.config.get('SECRET_KEY'):
             print("✅ Configuration chargée")
         else:
             print("❌ Configuration manquante")
@@ -201,9 +201,9 @@ def main():
     if passed == total:
         print("🎉 Tous les tests sont passés ! L'application est prête.")
         print("\n🚀 Pour démarrer l'application :")
-        print("   python fifa1.py")
+        print("   python app.py")
         print("\n🌐 Puis ouvrez votre navigateur sur :")
-        print("   http://localhost:5000")
+        print("   http://localhost:10000")
     else:
         print("⚠️ Certains tests ont échoué. Vérifiez les erreurs ci-dessus.")
     
