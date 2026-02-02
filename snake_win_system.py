@@ -161,6 +161,22 @@ class SnakeWinSystem:
             return {"resultat": "N", "confiance": 0.3, "source": "Over/Under indisponible"}
         
         try:
+            # Vérifier si odds_data est une liste et la convertir en dictionnaire
+            if isinstance(odds_data, list):
+                print(f"⚠️ Conversion de liste en dictionnaire: {len(odds_data)} éléments")
+                if len(odds_data) >= 3:
+                    odds_data = {
+                        'avg_odds_1': float(odds_data[0]) if odds_data[0] else 2.0,
+                        'avg_odds_x': float(odds_data[1]) if odds_data[1] else 3.0,
+                        'avg_odds_2': float(odds_data[2]) if odds_data[2] else 3.0,
+                        'over_2_5': 2.0,
+                        'under_2_5': 1.8,
+                        'handicap_home': 0.0,
+                        'handicap_away': 0.0
+                    }
+                else:
+                    return {"resultat": "N", "confiance": 0.3, "source": "données invalides"}
+            
             # Extraire les cotes pertinentes pour Over/Under
             cote_over_2_5 = odds_data.get('over_2_5', 2.0)
             cote_under_2_5 = odds_data.get('under_2_5', 1.8)
