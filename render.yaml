@@ -1,65 +1,64 @@
+version: "1"
+
 services:
-  # Service Web Principal - ORACXPRED MÉTAPHORE
+  # ============================
+  # Service Web Flask principal
+  # ============================
   - type: web
-    name: oracxpred-metaphore
+    name: fifa12345
     runtime: python
     plan: free
+
     buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+
     healthCheckPath: /api/health
-    
-    # Variables d'environnement de base
+    autoDeploy: true
+
     envVars:
       - key: PYTHON_VERSION
         value: 3.12
       - key: FLASK_ENV
         value: production
       - key: FLASK_DEBUG
-        value: false
-      - key: PORT
-        value: 10000
-    
-    # Configuration pour le scaling
-    autoDeploy: true
-    
-    # Domaine Render automatique
-    domains:
-      - oracxpred-metaphore.onrender.com
+        value: "false"
 
-  # Base de données PostgreSQL persistante
+    domains:
+      - fifa12345.onrender.com
+
+  # ============================
+  # Base de données PostgreSQL
+  # ============================
   - type: pserv
-    name: oracxpred-db
-    databaseName: oracxpred
+    name: fifa12345-db
     plan: free
-    ipAllowList: []
-    
-    # Configuration PostgreSQL optimisée
+    databaseName: fifa12345
     postgresVersion: 14
-    
-    # Sauvegardes automatiques Render
-    backup:
-      # Backup quotidien à 2h du matin UTC
-      schedule: "0 2 * * *"
-      # Conservation 30 jours
-      retentionDays: 30
-    
-    # Variables de connexion sécurisées
+    ipAllowList: []
+
     envVars:
       - key: POSTGRES_USER
-        value: oracxpred_user
+        value: fifa12345_user
       - key: POSTGRES_PASSWORD
         generateValue: true
       - key: POSTGRES_DB
-        value: oracxpred
+        value: fifa12345
 
-  # Service de backup automatique supplémentaire
+    backup:
+      schedule: "0 2 * * *"
+      retentionDays: 30
+
+  # ============================
+  # Service CRON (backup / tâches)
+  # ============================
   - type: cron
-    name: oracxpred-backup-service
-    schedule: "0 3 * * *"  # Tous les jours à 3h UTC
+    name: fifa12345-backup
     runtime: python
+    schedule: "0 3 * * *"
+
     buildCommand: pip install -r requirements.txt
     startCommand: python render_backup_service.py
-    
+
     envVars:
       - key: BACKUP_TYPE
         value: daily_full
@@ -67,16 +66,3 @@ services:
         value: 30
       - key: BACKUP_LOCATION
         value: render_internal
-
-# Configuration globale du build
-version: "1"
-build:
-  commands:
-    - echo "🚀 Build ORACXPRED MÉTAPHORE pour Render"
-    - python -m pip install --upgrade pip
-    - pip install -r requirements.txt
-    - echo "✅ Build terminé - Signé SOLITAIRE HACK 🇨🇮"
-
-# Dépendances entre services
-dependencies:
-  - oracxpred-db
