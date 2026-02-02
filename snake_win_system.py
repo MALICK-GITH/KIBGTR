@@ -20,8 +20,10 @@ class SnakeWinSystem:
         self.version = "SNAKE-WIN-2024"
         self.modele_json_path = ".cursor/models/simple_model_20260127_130444.json"
         self.modele_pkl_path = ".cursor/models/simple_model_20260127_131144.pkl"
+        self.modele_over_under_path = "api/model_over_under_handicap.joblib"
         self.modele_json = None
         self.modele_pkl = None
+        self.modele_over_under = None
         self.predictions_historiques = []
         self.precision_moyenne = 0.0
         
@@ -29,7 +31,7 @@ class SnakeWinSystem:
         self._charger_modeles()
     
     def _charger_modeles(self):
-        """Charger les modèles JSON et PKL"""
+        """Charger les modèles JSON, PKL et Over/Under"""
         try:
             # Charger le modèle JSON
             if os.path.exists(self.modele_json_path):
@@ -42,6 +44,18 @@ class SnakeWinSystem:
                 with open(self.modele_pkl_path, 'rb') as f:
                     self.modele_pkl = pickle.load(f)
                 print(f"✅ Modèle PKL chargé: {len(self.modele_pkl)} résultats")
+            
+            # Charger le modèle Over/Under Handicap
+            if os.path.exists(self.modele_over_under_path):
+                try:
+                    import joblib
+                    self.modele_over_under = joblib.load(self.modele_over_under_path)
+                    print(f"✅ Modèle Over/Under Handicap chargé depuis {self.modele_over_under_path}")
+                except ImportError:
+                    print("⚠️ joblib non disponible, utilisation de pickle pour le modèle Over/Under")
+                    with open(self.modele_over_under_path, 'rb') as f:
+                        self.modele_over_under = pickle.load(f)
+                    print(f"✅ Modèle Over/Under Handicap chargé avec pickle")
                 
         except Exception as e:
             print(f"❌ Erreur chargement modèles: {e}")
@@ -56,9 +70,10 @@ class SnakeWinSystem:
         # Analyse basée sur les modèles chargés
         analyse_json = self._analyser_avec_modele_json(odds_data)
         analyse_pkl = self._analyser_avec_modele_pkl(odds_data)
+        analyse_over_under = self._analyser_avec_modele_over_under(odds_data)
         
         # Fusion des analyses
-        prediction_fusionnee = self._fusionner_analyses(analyse_json, analyse_pkl)
+        prediction_fusionnee = self._fusionner_analyses(analyse_json, analyse_pkl, analyse_over_under)
         
         # Analyse contextuelle
         analyse_contexte = self._analyser_contexte(contexte_temps_reel, odds_data)
@@ -83,6 +98,7 @@ class SnakeWinSystem:
             "score_snake_win": score_final,
             "analyse_json": analyse_json,
             "analyse_pkl": analyse_pkl,
+            "analyse_over_under": analyse_over_under,
             "analyse_contexte": analyse_contexte,
             "analyse_paris": analyse_paris,
             "recommandations": self._generer_recommandations(score_final, prediction_fusionnee, analyse_paris)
@@ -160,32 +176,124 @@ class SnakeWinSystem:
             "difference": difference_minimale
         }
     
-    def _fusionner_analyses(self, analyse_json: Dict, analyse_pkl: Dict) -> Dict:
-        """Fusionner les analyses JSON et PKL"""
-        if analyse_json["resultat"] == analyse_pkl["resultat"]:
-            # Les deux modèles sont d'accord
-            return {
-                "resultat": analyse_json["resultat"],
-                "confiance": min(0.95, (analyse_json["confiance"] + analyse_pkl["confiance"]) / 2 + 0.2),
-                "accord": "COMPLET",
-                "sources": [analyse_json["source"], analyse_pkl["source"]]
-            }
-        else:
-            # Les modèles divergent, choisir le plus confiant
-            if analyse_json["confiance"] > analyse_pkl["confiance"]:
+    def _analyser_avec_modele_over_under(self, odds_data: Dict) -> Dict:
+        """Analyse basée sur le modèle Over/Under Handicap"""
+        if not self.modele_over_under:
+            return {"resultat": "N", "confiance": 0.3, "source": "Over/Under indisponible"}
+        
+        try:
+            # Extraire les cotes pertinentes pour Over/Under
+            cote_over_2_5 = odds_data.get('over_2_5', 2.0)
+            cote_under_2_5 = odds_data.get('under_2_5', 1.8)
+            handicap_home = odds_data.get('handicap_home', 0.0)
+            handicap_away = odds_data.get('handicap_away', 0.0)
+            
+            # Préparation des features pour le modèle
+            features = [
+                cote_over_2_5,
+                cote_under_2_5,
+                handicap_home,
+                handicap_away,
+                odds_data.get('avg_odds_1', 2.0),
+                odds_data.get('avg_odds_x', 3.0),
+                odds_data.get('avg_odds_2', 3.0)
+            ]
+            
+            # Prédiction avec le modèle
+            if hasattr(self.modele_over_under, 'predict'):
+                prediction = self.modele_over_under.predict([features])[0]
+                probabilites = None
+                if hasattr(self.modele_over_under, 'predict_proba'):
+                    probabilites = self.modele_over_under.predict_proba([features])[0]
+                
+                # Interpréter la prédiction
+                if prediction == 1:
+                    resultat = "OVER_2_5"
+                    confiance = probabilites[1] if probabilites else 0.7
+                elif prediction == 0:
+                    resultat = "UNDER_2_5"
+                    confiance = probabilites[0] if probabilites else 0.7
+                else:
+                    resultat = "HANDICAP"
+                    confiance = 0.6
+                
                 return {
-                    "resultat": analyse_json["resultat"],
-                    "confiance": analyse_json["confiance"],
-                    "accord": "PARTIEL_JSON",
-                    "sources": [analyse_json["source"], analyse_pkl["source"]]
+                    "resultat": resultat,
+                    "confiance": float(confiance),
+                    "source": "modèle Over/Under Handicap",
+                    "features": features,
+                    "prediction_brute": int(prediction)
                 }
             else:
-                return {
-                    "resultat": analyse_pkl["resultat"],
-                    "confiance": analyse_pkl["confiance"],
-                    "accord": "PARTIEL_PKL",
-                    "sources": [analyse_json["source"], analyse_pkl["source"]]
-                }
+                # Si le modèle n'a pas de méthode predict, utiliser une logique simple
+                if cote_over_2_5 < cote_under_2_5:
+                    return {
+                        "resultat": "OVER_2_5",
+                        "confiance": 0.65,
+                        "source": "modèle Over/Under (logique simple)"
+                    }
+                else:
+                    return {
+                        "resultat": "UNDER_2_5",
+                        "confiance": 0.65,
+                        "source": "modèle Over/Under (logique simple)"
+                    }
+                    
+        except Exception as e:
+            print(f"❌ Erreur analyse Over/Under: {e}")
+            return {"resultat": "N", "confiance": 0.3, "source": "erreur Over/Under"}
+    
+    def _fusionner_analyses(self, analyse_json: Dict, analyse_pkl: Dict, analyse_over_under: Dict) -> Dict:
+        """Fusionner les analyses JSON, PKL et Over/Under"""
+        
+        # Compter les votes pour chaque résultat
+        votes = {}
+        confiance_totale = 0
+        sources = []
+        
+        # Ajouter les votes de chaque modèle
+        for analyse in [analyse_json, analyse_pkl, analyse_over_under]:
+            resultat = analyse["resultat"]
+            confiance = analyse["confiance"]
+            source = analyse["source"]
+            
+            if resultat not in votes:
+                votes[resultat] = {"count": 0, "confiance_sum": 0, "sources": []}
+            
+            votes[resultat]["count"] += 1
+            votes[resultat]["confiance_sum"] += confiance
+            votes[resultat]["sources"].append(source)
+            confiance_totale += confiance
+            sources.append(source)
+        
+        # Trouver le résultat avec le plus de votes
+        resultat_gagnant = max(votes.keys(), key=lambda x: votes[x]["count"])
+        
+        # Calculer la confiance moyenne pour le résultat gagnant
+        confiance_moyenne = votes[resultat_gagnant]["confiance_sum"] / votes[resultat_gagnant]["count"]
+        
+        # Ajuster la confiance selon le nombre de modèles d'accord
+        if votes[resultat_gagnant]["count"] == 3:
+            # Tous les modèles sont d'accord
+            confiance_finale = min(0.98, confiance_moyenne + 0.25)
+            accord = "COMPLET_SNAKE_WIN"
+        elif votes[resultat_gagnant]["count"] == 2:
+            # Deux modèles sur trois sont d'accord
+            confiance_finale = min(0.85, confiance_moyenne + 0.15)
+            accord = "MAJORITAIRE_2/3"
+        else:
+            # Un seul modèle, prendre le plus confiant
+            confiance_finale = max(analyse_json["confiance"], analyse_pkl["confiance"], analyse_over_under["confiance"])
+            accord = "MINORITAIRE_1/3"
+        
+        return {
+            "resultat": resultat_gagnant,
+            "confiance": confiance_finale,
+            "accord": accord,
+            "sources": sources,
+            "votes_detail": votes,
+            "analyse_over_under": analyse_over_under
+        }
     
     def _analyser_contexte(self, contexte_temps_reel: Optional[Dict], odds_data: Dict) -> Dict:
         """Analyser le contexte du match"""
