@@ -2,7 +2,7 @@
 """
 🐍 SNAKE WIN - SYSTÈME DE PRÉDICTIONS AVANCÉ
 =============================================
-Intégration des modèles JSON et PKL pour des prédictions optimisées
+Système exclusivement basé sur le modèle joblib Over/Under Handicap
 """
 
 import json
@@ -14,37 +14,21 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 
 class SnakeWinSystem:
-    """🐍 SYSTÈME DE PRÉDICTIONS SNAKE WIN"""
+    """🐍 SYSTÈME DE PRÉDICTIONS SNAKE WIN - VERSION JOBLIB PURE"""
     
     def __init__(self):
-        self.version = "SNAKE-WIN-2024"
-        self.modele_json_path = ".cursor/models/simple_model_20260127_130444.json"
-        self.modele_pkl_path = ".cursor/models/simple_model_20260127_131144.pkl"
+        self.version = "SNAKE-WIN-JOBLIB-2024"
         self.modele_over_under_path = "api/model_over_under_handicap.joblib"
-        self.modele_json = None
-        self.modele_pkl = None
         self.modele_over_under = None
         self.predictions_historiques = []
         self.precision_moyenne = 0.0
         
-        # Charger les modèles au démarrage
-        self._charger_modeles()
+        # Charger le modèle au démarrage
+        self._charger_modele()
     
-    def _charger_modeles(self):
-        """Charger les modèles JSON, PKL et Over/Under"""
+    def _charger_modele(self):
+        """Charger le modèle Over/Under Handicap exclusivement"""
         try:
-            # Charger le modèle JSON
-            if os.path.exists(self.modele_json_path):
-                with open(self.modele_json_path, 'r', encoding='utf-8') as f:
-                    self.modele_json = json.load(f)
-                print(f"✅ Modèle JSON chargé: {len(self.modele_json)} résultats")
-            
-            # Charger le modèle PKL
-            if os.path.exists(self.modele_pkl_path):
-                with open(self.modele_pkl_path, 'rb') as f:
-                    self.modele_pkl = pickle.load(f)
-                print(f"✅ Modèle PKL chargé: {len(self.modele_pkl)} résultats")
-            
             # Charger le modèle Over/Under Handicap
             if os.path.exists(self.modele_over_under_path):
                 try:
@@ -56,24 +40,21 @@ class SnakeWinSystem:
                     with open(self.modele_over_under_path, 'rb') as f:
                         self.modele_over_under = pickle.load(f)
                     print(f"✅ Modèle Over/Under Handicap chargé avec pickle")
+            else:
+                print(f"❌ Modèle Over/Under non trouvé: {self.modele_over_under_path}")
                 
         except Exception as e:
-            print(f"❌ Erreur chargement modèles: {e}")
+            print(f"❌ Erreur chargement modèle: {e}")
     
     def analyser_match_snake_win(self, team1: str, team2: str, league: str, 
                                 odds_data: Dict, contexte_temps_reel: Optional[Dict] = None,
                                 paris_alternatifs: Optional[List[Dict]] = None) -> Dict:
-        """🐍 ANALYSE COMPLÈTE SNAKE WIN"""
+        """🐍 ANALYSE COMPLÈTE SNAKE WIN - VERSION JOBLIB PURE"""
         
         print(f"🐍 SNAKE WIN ANALYSE: {team1} vs {team2}")
         
-        # Analyse basée sur les modèles chargés
-        analyse_json = self._analyser_avec_modele_json(odds_data)
-        analyse_pkl = self._analyser_avec_modele_pkl(odds_data)
+        # Analyse exclusive avec le modèle Over/Under
         analyse_over_under = self._analyser_avec_modele_over_under(odds_data)
-        
-        # Fusion des analyses
-        prediction_fusionnee = self._fusionner_analyses(analyse_json, analyse_pkl, analyse_over_under)
         
         # Analyse contextuelle
         analyse_contexte = self._analyser_contexte(contexte_temps_reel, odds_data)
@@ -83,25 +64,23 @@ class SnakeWinSystem:
         
         # Score final Snake Win
         score_final = self._calculer_score_snake_win(
-            prediction_fusionnee, analyse_contexte, analyse_paris
+            analyse_over_under, analyse_contexte, analyse_paris
         )
         
         # Génération du rapport
         rapport = {
-            "systeme": "SNAKE WIN",
+            "systeme": "SNAKE WIN JOBLIB PURE",
             "version": self.version,
             "timestamp": datetime.now().isoformat(),
             "match": f"{team1} vs {team2}",
             "league": league,
-            "prediction_principale": prediction_fusionnee["resultat"],
-            "confiance": prediction_fusionnee["confiance"],
+            "prediction_principale": analyse_over_under["resultat"],
+            "confiance": analyse_over_under["confiance"],
             "score_snake_win": score_final,
-            "analyse_json": analyse_json,
-            "analyse_pkl": analyse_pkl,
             "analyse_over_under": analyse_over_under,
             "analyse_contexte": analyse_contexte,
             "analyse_paris": analyse_paris,
-            "recommandations": self._generer_recommandations(score_final, prediction_fusionnee, analyse_paris)
+            "recommandations": self._generer_recommandations(score_final, analyse_over_under, analyse_paris)
         }
         
         # Sauvegarder dans l'historique
@@ -177,7 +156,7 @@ class SnakeWinSystem:
         }
     
     def _analyser_avec_modele_over_under(self, odds_data: Dict) -> Dict:
-        """Analyse basée sur le modèle Over/Under Handicap"""
+        """Analyse basée sur le modèle Over/Under Handicap - PRINCIPAL"""
         if not self.modele_over_under:
             return {"resultat": "N", "confiance": 0.3, "source": "Over/Under indisponible"}
         
@@ -206,36 +185,62 @@ class SnakeWinSystem:
                 if hasattr(self.modele_over_under, 'predict_proba'):
                     probabilites = self.modele_over_under.predict_proba([features])[0]
                 
-                # Interpréter la prédiction
-                if prediction == 1:
-                    resultat = "OVER_2_5"
-                    confiance = probabilites[1] if probabilites else 0.7
-                elif prediction == 0:
-                    resultat = "UNDER_2_5"
-                    confiance = probabilites[0] if probabilites else 0.7
-                else:
-                    resultat = "HANDICAP"
-                    confiance = 0.6
+                # Interpréter la prédiction pour 1X2
+                cote_1 = odds_data.get('avg_odds_1', 2.0)
+                cote_x = odds_data.get('avg_odds_x', 3.0)
+                cote_2 = odds_data.get('avg_odds_2', 3.0)
+                
+                # Logique de décision basée sur les cotes et la prédiction Over/Under
+                if prediction == 1:  # OVER
+                    if cote_1 < 2.0:
+                        resultat = "1"
+                        confiance = probabilites[1] if probabilites else 0.75
+                    elif cote_2 < 2.0:
+                        resultat = "2"
+                        confiance = probabilites[1] if probabilites else 0.75
+                    else:
+                        resultat = "N"
+                        confiance = 0.6
+                else:  # UNDER
+                    if cote_x < 2.5:
+                        resultat = "N"
+                        confiance = probabilites[0] if probabilites else 0.75
+                    elif cote_1 < cote_2:
+                        resultat = "1"
+                        confiance = 0.65
+                    else:
+                        resultat = "2"
+                        confiance = 0.65
                 
                 return {
                     "resultat": resultat,
                     "confiance": float(confiance),
-                    "source": "modèle Over/Under Handicap",
+                    "source": "modèle Over/Under Handicap (principal)",
                     "features": features,
-                    "prediction_brute": int(prediction)
+                    "prediction_brute": int(prediction),
+                    "over_under_prediction": "OVER_2_5" if prediction == 1 else "UNDER_2_5"
                 }
             else:
                 # Si le modèle n'a pas de méthode predict, utiliser une logique simple
-                if cote_over_2_5 < cote_under_2_5:
+                cote_1 = odds_data.get('avg_odds_1', 2.0)
+                cote_2 = odds_data.get('avg_odds_2', 3.0)
+                
+                if cote_1 < 2.0:
                     return {
-                        "resultat": "OVER_2_5",
-                        "confiance": 0.65,
+                        "resultat": "1",
+                        "confiance": 0.7,
+                        "source": "modèle Over/Under (logique simple)"
+                    }
+                elif cote_2 < 2.0:
+                    return {
+                        "resultat": "2",
+                        "confiance": 0.7,
                         "source": "modèle Over/Under (logique simple)"
                     }
                 else:
                     return {
-                        "resultat": "UNDER_2_5",
-                        "confiance": 0.65,
+                        "resultat": "N",
+                        "confiance": 0.6,
                         "source": "modèle Over/Under (logique simple)"
                     }
                     
@@ -366,110 +371,118 @@ class SnakeWinSystem:
             "analyse": f"{len(opportunites)} opportunités identifiées"
         }
     
-    def _calculer_score_snake_win(self, prediction_fusionnee: Dict, 
+    def _calculer_score_snake_win(self, analyse_over_under: Dict, 
                                  analyse_contexte: Dict, analyse_paris: Dict) -> Dict:
-        """Calculer le score final Snake Win"""
+        """Calculer le score final Snake Win - VERSION JOBLIB PURE"""
         
         # Score de base basé sur la confiance de prédiction
-        score_base = prediction_fusionnee["confiance"] * 100
+        score_base = analyse_over_under["confiance"] * 100
         
         # Ajout des scores contextuels
         score_total = score_base
         score_total += analyse_contexte.get("score_contexte", 0)
         score_total += analyse_paris.get("score_paris", 0)
         
-        # Bonus Snake Win spécial
-        if prediction_fusionnee["accord"] == "COMPLET":
-            score_total += 25  # Bonus pour accord complet
+        # Bonus Snake Win spécial pour modèle joblib
+        if analyse_over_under["confiance"] >= 0.8:
+            score_total += 20  # Bonus haute confiance joblib
+        elif analyse_over_under["confiance"] >= 0.6:
+            score_total += 10  # Bonus confiance moyenne
         
         # Niveau de recommandation
         if score_total >= 150:
             niveau = "🐍 SNAKE WIN - TRÈS HAUTE CONFIANCE"
             couleur = "#00ff00"
         elif score_total >= 120:
-            niveau = "✅ FORTE RECOMMANDATION"
+            niveau = "✅ HAUTE CONFIANCE"
             couleur = "#00aa00"
         elif score_total >= 90:
-            niveau = "⚠️ RECOMMANDATION MODÉRÉE"
+            niveau = "⚠️ CONFIANCE MOYENNE"
             couleur = "#ffaa00"
-        else:
+        elif score_total >= 60:
             niveau = "❌ FAIBLE CONFIANCE"
+            couleur = "#ff6600"
+        else:
+            niveau = "🚫 TRÈS FAIBLE CONFIANCE"
             couleur = "#ff0000"
         
         return {
-            "score_total": round(score_total, 2),
-            "score_base": round(score_base, 2),
+            "score_total": min(200, score_total),  # Plafonné à 200
+            "score_base": score_base,
             "score_contexte": analyse_contexte.get("score_contexte", 0),
             "score_paris": analyse_paris.get("score_paris", 0),
+            "bonus_joblib": 20 if analyse_over_under["confiance"] >= 0.8 else (10 if analyse_over_under["confiance"] >= 0.6 else 0),
             "niveau": niveau,
-            "couleur": couleur,
-            "bonus_accord": 25 if prediction_fusionnee["accord"] == "COMPLET" else 0
+            "couleur": couleur
         }
     
     def _generer_recommandations(self, score_final: Dict, prediction: Dict, 
                                analyse_paris: Dict) -> List[str]:
-        """Générer les recommandations Snake Win"""
+        """Générer les recommandations Snake Win - VERSION JOBLIB PURE"""
         recommandations = []
         
-        # Recommandation principale
-        if prediction["resultat"] == "1":
-            recommandations.append(f"🐙 VICTOIRE ÉQUIPE 1 - Confiance: {prediction['confiance']:.1%}")
-        elif prediction["resultat"] == "2":
-            recommandations.append(f"🐙 VICTOIRE ÉQUIPE 2 - Confiance: {prediction['confiance']:.1%}")
-        else:
-            recommandations.append(f"🤝 MATCH NUL - Confiance: {prediction['confiance']:.1%}")
+        # Recommandation basée sur la prédiction
+        resultat = prediction["resultat"]
+        confiance = prediction["confiance"]
         
-        # Recommandations basées sur le score
-        if score_final["score_total"] >= 150:
-            recommandations.append("🐍 SNAKE WIN: PARI FORT RECOMMANDÉ")
-            recommandations.append("💰 Mise suggérée: 3-5 unités")
-        elif score_final["score_total"] >= 120:
-            recommandations.append("✅ PARI RECOMMANDÉ")
-            recommandations.append("💰 Mise suggérée: 2-3 unités")
-        elif score_final["score_total"] >= 90:
-            recommandations.append("⚠️ PARI MODÉRÉ")
-            recommandations.append("💰 Mise suggérée: 1-2 unités")
+        if resultat == "1":
+            recommandations.append(f"🏠 VICTOIRE DOMICILE - Confiance: {confiance:.1%}")
+        elif resultat == "2":
+            recommandations.append(f"✈️ VICTOIRE EXTERIEUR - Confiance: {confiance:.1%}")
         else:
-            recommandations.append("❌ PARI DÉCONSEILLÉ")
-            recommandations.append("🛑 Attendre une meilleure opportunité")
+            recommandations.append(f"🤝 MATCH NUL - Confiance: {confiance:.1%}")
+        
+        # Recommandation basée sur le score Snake Win
+        niveau = score_final["niveau"]
+        score_total = score_final["score_total"]
+        
+        if score_total >= 120:
+            recommandations.append(f"🐍 {niveau} - PARI RECOMMANDÉ")
+        elif score_total >= 90:
+            recommandations.append(f"⚠️ {niveau} - PARI AVEC PRUDENCE")
+        else:
+            recommandations.append(f"❌ {niveau} - PARI DÉCONSEILLÉ")
+        
+        # Ajouter info Over/Under si disponible
+        if "over_under_prediction" in prediction:
+            ou_prediction = prediction["over_under_prediction"]
+            recommandations.append(f"📊 Over/Under: {ou_prediction}")
         
         # Recommandations sur les paris alternatifs
-        opportunites = analyse_paris.get("opportunites", [])
-        if opportunites:
-            recommandations.append(f"🎯 Opportunités alternatives: {', '.join(opportunites[:3])}")
+        if analyse_paris.get("opportunites"):
+            recommandations.append(f"💰 Opportunités: {', '.join(analyse_paris['opportunites'])}")
         
         return recommandations
     
     def get_statistiques(self) -> Dict:
-        """Obtenir les statistiques du système Snake Win"""
+        """Obtenir les statistiques du système Snake Win - VERSION JOBLIB PURE"""
         total_predictions = len(self.predictions_historiques)
         
         if total_predictions == 0:
             return {
                 "total_predictions": 0,
                 "precision_moyenne": 0,
-                "systeme": "SNAKE WIN",
+                "systeme": "SNAKE WIN JOBLIB PURE",
                 "version": self.version,
                 "modeles_charges": {
-                    "json": self.modele_json is not None,
-                    "pkl": self.modele_pkl is not None
+                    "over_under_joblib": self.modele_over_under is not None
                 }
             }
         
         # Calculer les statistiques de base
-        predictions_correctes = sum(1 for p in self.predictions_historiques 
-                                  if p.get("correct", False))
+        confiances = [p["confiance"] for p in self.predictions_historiques]
+        scores_snake = [p["score_snake_win"]["score_total"] for p in self.predictions_historiques]
         
         return {
             "total_predictions": total_predictions,
-            "predictions_correctes": predictions_correctes,
-            "precision_moyenne": predictions_correctes / total_predictions if total_predictions > 0 else 0,
-            "systeme": "SNAKE WIN",
+            "precision_moyenne": sum(confiances) / len(confiances),
+            "score_snake_moyen": sum(scores_snake) / len(scores_snake),
+            "systeme": "SNAKE WIN JOBLIB PURE",
             "version": self.version,
             "modeles_charges": {
-                "json": self.modele_json is not None,
-                "pkl": self.modele_pkl is not None
-            }
+                "over_under_joblib": self.modele_over_under is not None
+            },
+            "predictions_recentes": self.predictions_historiques[-5:] if self.predictions_historiques else []
         }
 
 # Point d'entrée principal
