@@ -18,14 +18,17 @@ except ImportError:
     CLOUD_STORAGE_ENABLED = False
     print("Module de stockage cloud non disponible")
 
-# Import du module de persistance
-try:
-    from persistence_manager import initialize_persistence, manual_backup, list_available_backups, restore_from_backup, db_manager
-    PERSISTENCE_ENABLED = True
-    print("Module de persistance active")
-except ImportError:
-    PERSISTENCE_ENABLED = False
-    print("Module de persistance non disponible")
+# Import du module de persistance (désactivé pour PostgreSQL)
+# try:
+#     from persistence_manager import initialize_persistence, manual_backup, list_available_backups, restore_from_backup, db_manager
+#     PERSISTENCE_ENABLED = True
+#     print("Module de persistance active")
+# except ImportError:
+#     PERSISTENCE_ENABLED = False
+#     print("Module de persistance non disponible")
+
+# Désactivation du système de persistance local pour PostgreSQL
+PERSISTENCE_ENABLED = False
 
 # Import du module de sécurité
 try:
@@ -135,9 +138,8 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB max
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
-# Configuration de la base de données avec chemin absolu
-DB_PATH = os.path.join(DATA_DIR, 'oracxpred.db')
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
+# Configuration de la base de données PostgreSQL
+app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "postgresql://postgres:[YOUR-PASSWORD]@db.idvgrkcxrpciqhjundua.supabase.co:5432/postgres")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.secret_key = 'oracxpred-metaphore-secret-key-2024'  # Clé secrète pour les sessions
 db.init_app(app)
@@ -211,9 +213,9 @@ with app.app_context():
         print(f"⚠️  Erreur lors de l'initialisation de l'admin: {e}")
         # Ne pas bloquer le démarrage si l'admin ne peut pas être créé
 
-# Initialiser le système de persistance
-if PERSISTENCE_ENABLED:
-    initialize_persistence()
+# Initialiser le système de persistance (désactivé pour PostgreSQL)
+# if PERSISTENCE_ENABLED:
+#     initialize_persistence()
 
 # Initialiser le stockage cloud
 if CLOUD_STORAGE_ENABLED:
@@ -630,23 +632,23 @@ def admin_backup():
         action = request.form.get('action')
         
         if action == 'backup':
-            if PERSISTENCE_ENABLED:
-                success = manual_backup()
-                if success:
-                    log_action('admin_backup', "Backup manuel créé", admin_id=session.get('admin_id'), severity='info')
-            else:
-                log_action('admin_backup', "Tentative de backup - module non disponible", admin_id=session.get('admin_id'), severity='warning')
-        
-        elif action == 'restore' and PERSISTENCE_ENABLED:
+            # Backup désactivé pour PostgreSQL
+            # if PERSISTENCE_ENABLED:
+            #     success = manual_backup()
+            #     if success:
+            #         log_action('admin_backup', "Backup manuel créé", admin_id=session.get('admin_id'), severity='info')
+            pass  # PostgreSQL gère les backups automatiquement
+        elif action == 'restore' and False:  # Désactivé pour PostgreSQL
             backup_name = request.form.get('backup_name')
             if backup_name:
-                success = restore_from_backup(backup_name)
-                if success:
-                    log_action('admin_restore', f"Backup restauré: {backup_name}", admin_id=session.get('admin_id'), severity='warning')
+                # success = restore_from_backup(backup_name)
+                # if success:
+                #     log_action('admin_restore', f"Backup restauré: {backup_name}", admin_id=session.get('admin_id'), severity='warning')
+                pass  # PostgreSQL gère les restaurations différemment
     
-    # Récupérer la liste des backups
-    backups = list_available_backups() if PERSISTENCE_ENABLED else []
-    db_stats = db_manager.get_database_stats() if PERSISTENCE_ENABLED else None
+    # Récupérer la liste des backups (désactivé pour PostgreSQL)
+    backups = []  # PostgreSQL gère les backups automatiquement
+    db_stats = None  # Stats PostgreSQL gérées différemment
     
     return render_template_string(ADMIN_BACKUP_TEMPLATE,
         backups=backups,
