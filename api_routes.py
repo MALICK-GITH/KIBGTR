@@ -13,6 +13,14 @@ from session_manager import session_manager
 from plan_service import plan_service, PlanType
 from models_oauth import db, User, Prediction, AuditLog
 
+# Import du module ML
+try:
+    from ml_integration import ml_integration
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+    ml_integration = None
+
 # Blueprint API
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -355,6 +363,148 @@ def admin_delete_user(user_payload, user_id):
     
     return jsonify({'message': 'Utilisateur supprimé'})
 
+# --- ML Prediction Endpoints ---
+
+@api_bp.route('/ml/status')
+def ml_status():
+    """Vérifie le statut des modèles ML"""
+    if not ML_AVAILABLE:
+        return jsonify({'error': 'Module ML non disponible'}), 503
+    
+    return jsonify(ml_integration.get_model_status())
+
+@api_bp.route('/ml/predict/1x2', methods=['POST'])
+@require_auth
+def predict_match_1x2(user_payload):
+    """Prédit le résultat d'un match (1/X/2)"""
+    if not ML_AVAILABLE:
+        return jsonify({'error': 'Module ML non disponible'}), 503
+    
+    try:
+        match_data = request.get_json()
+        if not match_data:
+            return jsonify({'error': 'Données du match requises'}), 400
+        
+        prediction = ml_integration.predict_match_result(match_data)
+        
+        # Logger la prédiction
+        audit = AuditLog(
+            user_id=user_payload['user_id'],
+            action='ML_PREDICTION_1X2',
+            details=json.dumps({
+                'match_data': match_data,
+                'prediction': prediction
+            })
+        )
+        db.session.add(audit)
+        db.session.commit()
+        
+        return jsonify(prediction)
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur de prédiction: {str(e)}'}), 500
+
+@api_bp.route('/ml/predict/over-under', methods=['POST'])
+@require_auth
+def predict_over_under(user_payload):
+    """Prédit Over/Under pour une ligne donnée"""
+    if not ML_AVAILABLE:
+        return jsonify({'error': 'Module ML non disponible'}), 503
+    
+    try:
+        data = request.get_json()
+        match_data = data.get('match_data', {})
+        line = data.get('line', 2.5)
+        
+        if not match_data:
+            return jsonify({'error': 'Données du match requises'}), 400
+        
+        prediction = ml_integration.predict_over_under(match_data, line)
+        
+        # Logger la prédiction
+        audit = AuditLog(
+            user_id=user_payload['user_id'],
+            action='ML_PREDICTION_OVER_UNDER',
+            details=json.dumps({
+                'match_data': match_data,
+                'line': line,
+                'prediction': prediction
+            })
+        )
+        db.session.add(audit)
+        db.session.commit()
+        
+        return jsonify(prediction)
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur de prédiction: {str(e)}'}), 500
+
+@api_bp.route('/ml/predict/handicap', methods=['POST'])
+@require_auth
+def predict_handicap(user_payload):
+    """Prédit le résultat d'un handicap"""
+    if not ML_AVAILABLE:
+        return jsonify({'error': 'Module ML non disponible'}), 503
+    
+    try:
+        data = request.get_json()
+        match_data = data.get('match_data', {})
+        handicap = data.get('handicap', -1.5)
+        
+        if not match_data:
+            return jsonify({'error': 'Données du match requises'}), 400
+        
+        prediction = ml_integration.predict_handicap(match_data, handicap)
+        
+        # Logger la prédiction
+        audit = AuditLog(
+            user_id=user_payload['user_id'],
+            action='ML_PREDICTION_HANDICAP',
+            details=json.dumps({
+                'match_data': match_data,
+                'handicap': handicap,
+                'prediction': prediction
+            })
+        )
+        db.session.add(audit)
+        db.session.commit()
+        
+        return jsonify(prediction)
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur de prédiction: {str(e)}'}), 500
+
+@api_bp.route('/ml/predict/all', methods=['POST'])
+@require_premium
+def predict_all(user_payload):
+    """Obtient toutes les prédictions pour un match (premium uniquement)"""
+    if not ML_AVAILABLE:
+        return jsonify({'error': 'Module ML non disponible'}), 503
+    
+    try:
+        match_data = request.get_json()
+        if not match_data:
+            return jsonify({'error': 'Données du match requises'}), 400
+        
+        predictions = ml_integration.get_all_predictions(match_data)
+        
+        # Logger la prédiction complète
+        audit = AuditLog(
+            user_id=user_payload['user_id'],
+            action='ML_PREDICTION_ALL',
+            details=json.dumps({
+                'match_data': match_data,
+                'predictions_count': len(predictions.get('predictions', {}))
+            })
+        )
+        db.session.add(audit)
+        db.session.commit()
+        
+        return jsonify(predictions)
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur de prédiction: {str(e)}'}), 500
+
 # --- Health Check ---
 
 @api_bp.route('/health')
@@ -364,5 +514,6 @@ def health_check():
         'status': 'healthy',
         'service': 'ORACXPRED MÉTAPHORE',
         'version': '1.0.0',
+        'ml_available': ML_AVAILABLE,
         'signature': 'Signé SOLITAIRE HACK 🇨🇮'
     })

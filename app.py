@@ -116,6 +116,16 @@ class NumpySimulation:
     def random():
         return random.random()
 
+# Import du module ML
+try:
+    from ml_integration import ml_integration
+    ML_AVAILABLE = True
+    print("🤖 Module ML intégré avec succès")
+except ImportError:
+    ML_AVAILABLE = False
+    ml_integration = None
+    print("❌ Module ML non disponible")
+
 from models import db, User, SystemLog, Prediction, Alert, AccessLog
 from prediction_manager import (
     log_action, log_access, create_prediction, get_prediction_by_match,
@@ -1103,11 +1113,13 @@ def match_details(match_id):
         match = next((m for m in matches if m.get("I") == match_id), None)
         if not match:
             return f"Aucun match trouvé pour l'identifiant {match_id}"
+        
         # Infos principales
         team1 = match.get("O1", "–")
         team2 = match.get("O2", "–")
         league = match.get("LE", "–")
         sport = detect_sport(league)
+        
         # Scores (structure corrigée)
         sc = match.get("SC", {})
         fs = sc.get("FS", {})
@@ -1130,6 +1142,32 @@ def match_details(match_id):
             score2 = int(score2) if score2 is not None else 0
         except (ValueError, TypeError):
             score2 = 0
+        
+        # Extraire les cotes du match
+        odds = extract_odds_from_match(match)
+        
+        # Préparer les données pour les prédictions ML
+        ml_match_data = {
+            "team1": team1,
+            "team2": team2,
+            "league": league,
+            "minute": match.get("MI", 0),
+            "score1": score1,
+            "score2": score2,
+            "match_time_seconds": match.get("MI", 0) * 60,
+            "odds_1": odds.get("1", 2.0),
+            "odds_x": odds.get("X", 3.0),
+            "odds_2": odds.get("2", 2.5)
+        }
+        
+        # Obtenir les prédictions ML si disponibles
+        ml_predictions = None
+        if ML_AVAILABLE and ml_integration.models_loaded:
+            try:
+                ml_predictions = ml_integration.get_all_predictions(ml_match_data)
+            except Exception as e:
+                print(f"Erreur prédictions ML: {e}")
+                ml_predictions = {"error": "Prédictions indisponibles"}
 
         # EXTRACTION DU TEMPS DE JEU (MINUTE)
         minute = 0
@@ -1710,6 +1748,64 @@ def match_details(match_id):
             </div>
         </div>"""
 
+        # HTML pour les prédictions Machine Learning
+        ml_html = ""
+        if ml_predictions and "error" not in ml_predictions:
+            ml_html = f"""
+        <div style='background: linear-gradient(135deg, #16a085 0%, #27ae60 100%); color: white; padding: 25px; border-radius: 15px; margin: 20px 0; box-shadow: 0 10px 30px rgba(0,0,0,0.3);'>
+            <h3>🤖 PRÉDICTIONS MACHINE LEARNING</h3>
+            <div style='background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 15px 0;'>
+                <div style='font-weight: bold; margin-bottom: 10px;'>📊 Match: {ml_predictions['match_info']['team1']} vs {ml_predictions['match_info']['team2']}</div>
+                <div style='font-size: 12px; opacity: 0.9;'>Ligue: {ml_predictions['match_info']['league']} | Minute: {ml_predictions['match_info']['minute']} | Score: {ml_predictions['match_info']['score1']}-{ml_predictions['match_info']['score2']}</div>
+            </div>"""
+            
+            # Afficher prédiction 1X2 si disponible
+            if "1x2" in ml_predictions["predictions"]:
+                pred_1x2 = ml_predictions["predictions"]["1x2"]
+                ml_html += f"""
+            <div style='background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 10px 0;'>
+                <div style='font-weight: bold; margin-bottom: 8px;'>🎯 RÉSULTAT 1X2:</div>
+                <div style='font-size: 18px; font-weight: bold;'>{pred_1x2['prediction']}</div>
+                <div style='font-size: 14px; margin-top: 5px;'>Confiance: {pred_1x2['confidence']:.1%}</div>
+                <div style='font-size: 12px; opacity: 0.8;'>Probabilités: {', '.join([f'{k}: {v:.1%}' for k, v in pred_1x2['probabilities'].items()])}</div>
+            </div>"""
+            
+            # Afficher prédictions Over/Under
+            ou_predictions = {k: v for k, v in ml_predictions["predictions"].items() if k.startswith("over_under_")}
+            if ou_predictions:
+                ml_html += "<div style='font-weight: bold; margin: 15px 0 10px 0;'>📈 OVER/UNDER:</div>"
+                for key, pred in ou_predictions.items():
+                    line = key.split("_")[-1]
+                    ml_html += f"""
+            <div style='background: rgba(255,255,255,0.1); padding: 10px; border-radius: 6px; margin: 5px 0; display: inline-block; margin-right: 10px;'>
+                <div style='font-weight: bold;'>{line} buts</div>
+                <div style='font-size: 14px;'>{pred['prediction']} ({pred['confidence']:.1%})</div>
+                <div style='font-size: 11px; opacity: 0.8;'>Over: {pred['over_probability']:.1%} | Under: {pred['under_probability']:.1%}</div>
+            </div>"""
+            
+            # Afficher prédictions Handicap
+            hc_predictions = {k: v for k, v in ml_predictions["predictions"].items() if k.startswith("handicap_")}
+            if hc_predictions:
+                ml_html += "<div style='font-weight: bold; margin: 15px 0 10px 0;'>⚖️ HANDICAP:</div>"
+                for key, pred in hc_predictions.items():
+                    handicap = key.split("_")[-1]
+                    ml_html += f"""
+            <div style='background: rgba(255,255,255,0.1); padding: 10px; border-radius: 6px; margin: 5px 0; display: inline-block; margin-right: 10px;'>
+                <div style='font-weight: bold;'>Handicap {handicap}</div>
+                <div style='font-size: 14px;'>{pred['prediction']} ({pred['confidence']:.1%})</div>
+                <div style='font-size: 11px; opacity: 0.8;'>Home: {pred['home_probability']:.1%} | Away: {pred['away_probability']:.1%}</div>
+            </div>"""
+            
+            ml_html += f"<div style='font-size: 11px; text-align: right; opacity: 0.7; margin-top: 10px;'>🕒 {ml_predictions['timestamp']}</div></div>"
+        elif ml_predictions and "error" in ml_predictions:
+            ml_html = f"""
+        <div style='background: #e74c3c; color: white; padding: 20px; border-radius: 12px; margin: 20px 0;'>
+            <h3>🤖 MACHINE LEARNING</h3>
+            <div style='background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 10px 0;'>
+                ⚠️ {ml_predictions['error']}
+            </div>
+        </div>"""
+
         # HTML pour l'Alliance de tous les systèmes
         alliance_html = f"""
         <div style='background: linear-gradient(135deg, #ff6b6b 0%, #4ecdc4 25%, #45b7d1 50%, #96ceb4 75%, #feca57 100%); color: white; padding: 30px; border-radius: 20px; margin: 25px 0; box-shadow: 0 15px 40px rgba(0,0,0,0.4); border: 3px solid #fff;'>
@@ -2024,6 +2120,7 @@ def match_details(match_id):
                 {evolution_html}
                 {ia_html}
                 {quantique_html}
+                {ml_html}
                 <p><b>Prédiction 1X2 du bot :</b> {prediction}</p>
                 <p><b>Explication :</b> {explication}</p>
                 <!-- Système 1X2 Classique -->
