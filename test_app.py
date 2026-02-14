@@ -109,22 +109,14 @@ def test_api_connection():
     """Tester la connexion à l'API 1xbet"""
     print("\n🌐 Test de connexion à l'API...")
     try:
-        api_url = "https://1xbet.com/service-api/LiveFeed/Get1x2_VZip?sports=85&count=40&lng=fr&gr=285&mode=4&country=96&getEmpty=true&virtualSports=true&noFilterBlockEvent=true"
-        
+        from api_client import fetch_1xbet_matches
         print("   - Tentative de connexion à l'API 1xbet...")
-        response = requests.get(api_url, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("Value"):
-                print(f"✅ API accessible - {len(data['Value'])} matchs récupérés")
-                return True
-            else:
-                print("⚠️ API accessible mais aucune donnée")
-                return False
-        else:
-            print(f"❌ API non accessible - Code: {response.status_code}")
-            return False
+        matches = fetch_1xbet_matches(count=40, timeout=10, verify=False)
+        if matches:
+            print(f"✅ API accessible - {len(matches)} matchs récupérés")
+            return True
+        print("⚠️ API accessible mais aucune donnée")
+        return False
             
     except requests.exceptions.Timeout:
         print("❌ Timeout lors de la connexion à l'API")

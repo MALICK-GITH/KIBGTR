@@ -1,13 +1,23 @@
 # -*- coding: utf-8 -*-
-from flask import Flask, request, render_template_string, session, redirect, url_for, send_from_directory
+from flask import Flask, request, render_template_string, session, redirect, url_for, send_from_directory, send_file
 import requests
+from api_client import fetch_1xbet_matches
 import os
+import io
 import uuid
 from datetime import datetime, timedelta
 import random
 import re
 import json
 from collections import defaultdict
+
+# Supabase (optionnel)
+try:
+    from supabase import create_client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    create_client = None
 
 # Import du module de stockage cloud
 try:
@@ -126,7 +136,25 @@ except ImportError:
     ml_integration = None
     print("❌ Module ML non disponible")
 
-from models import db, User, SystemLog, Prediction, Alert, AccessLog
+# Import des gestionnaires d'erreur
+try:
+    from error_handlers import render_match_error, render_match_demo
+    ERROR_HANDLERS_AVAILABLE = True
+    print("🛠️  Gestionnaires d'erreur chargés")
+except ImportError:
+    ERROR_HANDLERS_AVAILABLE = False
+    print("⚠️  Gestionnaires d'erreur non disponibles")
+
+# Import du mode démonstration
+try:
+    from demo_mode import get_demo_match_by_id, is_api_available, create_demo_response
+    DEMO_MODE_AVAILABLE = True
+    print("🎮 Mode démonstration disponible")
+except ImportError:
+    DEMO_MODE_AVAILABLE = False
+    print("⚠️  Mode démonstration non disponible")
+
+from models import db, User, UserFile, SystemLog, Prediction, Alert, AccessLog
 from prediction_manager import (
     log_action, log_access, create_prediction, get_prediction_by_match,
     invalidate_prediction, lock_prediction, create_alert, check_match_started_alert,
@@ -148,14 +176,59 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB max
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
-# Configuration de la base de données PostgreSQL
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "postgresql://postgres:[YOUR-PASSWORD]@db.idvgrkcxrpciqhjundua.supabase.co:5432/postgres")
+# Configuration de la base de donnees - SQLite pour le developpement local
+# Pour la production, utilisez la variable d'environnement DATABASE_URL
+database_url = os.getenv("DATABASE_URL")
+is_render = os.getenv("RENDER", "").lower() == "true"
+require_database_url = os.getenv("REQUIRE_DATABASE_URL", "1").strip() == "1"
+DB_PATH = None
+
+if database_url:
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+    print("Mode Production: PostgreSQL")
+else:
+    if is_render and require_database_url:
+        raise RuntimeError("DATABASE_URL manquant sur Render. Configurez une base persistante.")
+    DB_PATH = os.path.join(DATA_DIR, "oracxpred.db")
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{DB_PATH}"
+    print(f"Mode Development: SQLite ({DB_PATH})")
+
+UPLOAD_STORAGE_DEFAULT = "db" if database_url else "local"
+UPLOAD_STORAGE = os.getenv("UPLOAD_STORAGE", UPLOAD_STORAGE_DEFAULT).strip().lower()
+if UPLOAD_STORAGE not in ["local", "db", "supabase"]:
+    UPLOAD_STORAGE = UPLOAD_STORAGE_DEFAULT
+
+allow_ephemeral_uploads = os.getenv("ALLOW_EPHEMERAL_UPLOADS", "0").strip() == "1"
+if is_render and UPLOAD_STORAGE == "local" and not allow_ephemeral_uploads:
+    raise RuntimeError("UPLOAD_STORAGE=local sur Render risque de perdre les fichiers. Utilisez UPLOAD_STORAGE=db.")
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
+SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "avatars").strip() or "avatars"
+SUPABASE_STORAGE_PUBLIC = os.getenv("SUPABASE_STORAGE_PUBLIC", "1").strip() == "1"
+
+if UPLOAD_STORAGE == "supabase":
+    if not SUPABASE_AVAILABLE:
+        raise RuntimeError("SUPABASE non disponible. Installez la dependance 'supabase'.")
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise RuntimeError("SUPABASE_URL ou SUPABASE_KEY manquant.")
+    if not SUPABASE_STORAGE_PUBLIC:
+        raise RuntimeError("SUPABASE_STORAGE_PUBLIC=1 requis pour servir les images via URL publique.")
+
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.secret_key = 'oracxpred-metaphore-secret-key-2024'  # Clé secrète pour les sessions
 db.init_app(app)
 
-with app.app_context():
-    db.create_all()
+# Créer les tables seulement si la base de données est accessible
+try:
+    with app.app_context():
+        db.create_all()
+        print("✅ Base de données initialisée avec succès")
+except Exception as e:
+    print(f"⚠️  Erreur initialisation base de données: {e}")
+    print("🔄 L'application démarrera en mode dégradé (sans base de données)")
     
     # Initialiser le système Snake Win
     snake_win_system = None
@@ -255,6 +328,45 @@ def allowed_file(filename):
     """Vérifie si le fichier a une extension autorisée"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
+_supabase_client = None
+
+def get_supabase_client():
+    """Retourne un client Supabase initialis?? (singleton)."""
+    global _supabase_client
+    if _supabase_client is None:
+        _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    return _supabase_client
+
+def upload_profile_photo_supabase(file_bytes, filename, content_type):
+    """Upload une photo de profil vers Supabase Storage et retourne l'URL publique."""
+    if not SUPABASE_AVAILABLE:
+        raise RuntimeError("SUPABASE non disponible")
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise RuntimeError("SUPABASE_URL ou SUPABASE_KEY manquant")
+
+    object_path = f"profiles/{filename}"
+    file_options = {
+        "content-type": content_type or "application/octet-stream",
+        "upsert": "false"
+    }
+    supabase = get_supabase_client()
+    response = supabase.storage.from_(SUPABASE_STORAGE_BUCKET).upload(
+        object_path,
+        io.BytesIO(file_bytes),
+        file_options
+    )
+
+    error = None
+    if isinstance(response, dict):
+        error = response.get("error") or response.get("message")
+    else:
+        error = getattr(response, "error", None)
+    if error:
+        raise RuntimeError(str(error))
+
+    return f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/{object_path}"
+
 def get_current_user():
     """Récupère l'utilisateur actuellement connecté"""
     if session.get('user_id'):
@@ -293,10 +405,22 @@ def home():
         selected_league = request.args.get("league", "").strip()
         selected_status = request.args.get("status", "").strip()
 
-        # URL de l'API 1xbet
-        api_url = "https://1xbet.com/service-api/LiveFeed/Get1x2_VZip?sports=85&count=40&lng=fr&gr=285&mode=4&country=96&getEmpty=true&virtualSports=true&noFilterBlockEvent=true"
-        response = requests.get(api_url)
-        matches = response.json().get("Value", [])
+        matches = []
+        api_error = None
+        try:
+            matches = fetch_1xbet_matches(count=40, timeout=10, verify=False)
+        except requests.exceptions.SSLError as e:
+            api_error = f"SSL error: {e}"
+        except requests.exceptions.RequestException as e:
+            api_error = f"Connection error: {e}"
+        except ValueError as e:
+            api_error = f"API response error: {e}"
+
+        if api_error:
+            print(f"API 1xbet error (home): {api_error}")
+            if DEMO_MODE_AVAILABLE:
+                print("Mode demo active - utilisation des donnees locales")
+                matches = create_demo_response().get("Value", [])
 
         sports_detected = set()
         leagues_detected = set()
@@ -702,12 +826,14 @@ def admin_cloud():
                 log_action('cloud_setup', "FTP configure", admin_id=session.get('admin_id'), severity='info')
         
         elif action == 'sync_now':
-            if CLOUD_STORAGE_ENABLED:
+            if CLOUD_STORAGE_ENABLED and DB_PATH:
                 success, results = sync_now(DB_PATH)
                 if success:
                     log_action('cloud_sync', "Synchronisation cloud reussie", admin_id=session.get('admin_id'), severity='info')
                 else:
                     log_action('cloud_sync', "Erreur synchronisation cloud", admin_id=session.get('admin_id'), severity='warning')
+            elif CLOUD_STORAGE_ENABLED and not DB_PATH:
+                log_action('cloud_sync', "Sync indisponible sans base locale", admin_id=session.get('admin_id'), severity='warning')
         
         elif action == 'toggle_auto_sync':
             enabled = request.form.get('auto_sync') == 'on'
@@ -729,6 +855,16 @@ def uploaded_file(filename):
     """Route pour servir les photos de profil uploadées"""
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
+@app.route('/uploads/db/<int:file_id>')
+def uploaded_file_db(file_id):
+    """Serve profile photos stored in database"""
+    file_record = UserFile.query.get_or_404(file_id)
+    return send_file(
+        io.BytesIO(file_record.data),
+        mimetype=file_record.content_type or 'application/octet-stream',
+        download_name=file_record.filename or f'user_file_{file_id}'
+    )
+
 @app.route('/register', methods=['GET', 'POST'])
 def user_register():
     if request.method == 'POST':
@@ -738,29 +874,46 @@ def user_register():
         confirm_password = request.form.get('confirm_password', '').strip()
         
         profile_photo_path = None
+        pending_upload = None
         
-        # Gérer l'upload de la photo de profil
+        if not username or not password:
+            return render_template_string(USER_REGISTER_TEMPLATE, error="Nom d'utilisateur et mot de passe requis")
+        
+        if password != confirm_password:
+            return render_template_string(USER_REGISTER_TEMPLATE, error="Les mots de passe ne correspondent pas")
+        
+        if User.query.filter_by(username=username).first():
+            return render_template_string(USER_REGISTER_TEMPLATE, error="Nom d'utilisateur deja pris")
+        
+        # Gerer l'upload de la photo de profil apres validation
         if 'profile_photo' in request.files:
             file = request.files['profile_photo']
             if file and file.filename != '':
-                if allowed_file(file.filename):
-                    # Générer un nom de fichier unique
-                    filename = f"{uuid.uuid4().hex}_{username}_{file.filename}"
-                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                    file.save(filepath)
-                    # Stocker le chemin relatif pour l'URL
-                    profile_photo_path = f"/static/uploads/profiles/{filename}"
+                if not allowed_file(file.filename):
+                    return render_template_string(USER_REGISTER_TEMPLATE, error="Format de fichier non autorise. Utilisez PNG, JPG, JPEG, GIF ou WEBP")
+                
+                filename = f"{uuid.uuid4().hex}_{username}_{file.filename}"
+                if UPLOAD_STORAGE == "db":
+                    file_bytes = file.read()
+                    if not file_bytes:
+                        return render_template_string(USER_REGISTER_TEMPLATE, error="Fichier vide ou illisible")
+                    pending_upload = {
+                        "filename": filename,
+                        "content_type": file.mimetype or "application/octet-stream",
+                        "data": file_bytes
+                    }
+                elif UPLOAD_STORAGE == "supabase":
+                    file_bytes = file.read()
+                    if not file_bytes:
+                        return render_template_string(USER_REGISTER_TEMPLATE, error="Fichier vide ou illisible")
+                    try:
+                        profile_photo_path = upload_profile_photo_supabase(file_bytes, filename, file.mimetype)
+                    except Exception as e:
+                        return render_template_string(USER_REGISTER_TEMPLATE, error=f"Erreur upload Supabase: {e}")
                 else:
-                    return render_template_string(USER_REGISTER_TEMPLATE, error="Format de fichier non autorisé. Utilisez PNG, JPG, JPEG, GIF ou WEBP")
-
-        if not username or not password:
-            return render_template_string(USER_REGISTER_TEMPLATE, error="Nom d'utilisateur et mot de passe requis")
-
-        if password != confirm_password:
-            return render_template_string(USER_REGISTER_TEMPLATE, error="Les mots de passe ne correspondent pas")
-
-        if User.query.filter_by(username=username).first():
-            return render_template_string(USER_REGISTER_TEMPLATE, error="Nom d'utilisateur déjà pris")
+                    filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+                    file.save(filepath)
+                    profile_photo_path = f"/static/uploads/profiles/{filename}"
 
         user = User(
             username=username,
@@ -768,16 +921,28 @@ def user_register():
             password=hash_password(password) if SECURITY_ENABLED else password,
             profile_photo=profile_photo_path,
             is_admin=False,
-            is_approved=True,  # Compte approuvé automatiquement
+            is_approved=True,
             subscription_plan='free',
-            subscription_status='inactive',  # Mais reste inactif jusqu'à activation par admin
+            subscription_status='inactive',
         )
         db.session.add(user)
+        db.session.flush()
+        
+        if pending_upload:
+            user_file = UserFile(
+                user_id=user.id,
+                filename=pending_upload['filename'],
+                content_type=pending_upload['content_type'],
+                data=pending_upload['data']
+            )
+            db.session.add(user_file)
+            db.session.flush()
+            user.profile_photo = f"/uploads/db/{user_file.id}"
+        
         db.session.commit()
         return redirect(url_for('user_login'))
 
     return render_template_string(USER_REGISTER_TEMPLATE)
-
 
 @app.route('/login', methods=['GET', 'POST'])
 def user_login():
@@ -1106,13 +1271,39 @@ def match_details(match_id):
     
     # Si le compte est actif, afficher les détails du match
     try:
-        # Récupérer les données de l'API 1xbet
-        api_url = "https://1xbet.com/service-api/LiveFeed/Get1x2_VZip?sports=85&count=40&lng=fr&gr=285&mode=4&country=96&getEmpty=true&virtualSports=true&noFilterBlockEvent=true"
-        response = requests.get(api_url)
-        matches = response.json().get("Value", [])
-        match = next((m for m in matches if m.get("I") == match_id), None)
+        # Vérifier si l'API est accessible
+        api_available = False
+        if DEMO_MODE_AVAILABLE:
+            api_available = is_api_available()
+            if not api_available:
+                print("🎮 Mode démo activé - API 1xbet inaccessible")
+        
+        match = None
+        if api_available:
+            try:
+                matches = fetch_1xbet_matches(count=40, timeout=10, verify=False)
+                match = next((m for m in matches if m.get("I") == match_id), None)
+            except (requests.exceptions.RequestException, ValueError) as e:
+                if DEMO_MODE_AVAILABLE:
+                    print(f"API 1xbet error (match_details): {e}")
+                    api_available = False
+                else:
+                    raise
+
+        if not api_available:
+            if DEMO_MODE_AVAILABLE:
+                # Mode démonstration
+                match = get_demo_match_by_id(match_id)
+                print(f"🎮 Utilisation du match de démo: {match.get('O1', 'N/A')} vs {match.get('O2', 'N/A')}")
+            else:
+                raise requests.exceptions.ConnectionError("API 1xbet unavailable")
+        
         if not match:
-            return f"Aucun match trouvé pour l'identifiant {match_id}"
+            # Mode démo si aucun match trouvé
+            if ERROR_HANDLERS_AVAILABLE:
+                return render_match_demo(match_id, user)
+            else:
+                return f"Aucun match trouvé pour l'identifiant {match_id}"
         
         # Infos principales
         team1 = match.get("O1", "–")
@@ -1168,6 +1359,31 @@ def match_details(match_id):
             except Exception as e:
                 print(f"Erreur prédictions ML: {e}")
                 ml_predictions = {"error": "Prédictions indisponibles"}
+
+    except requests.exceptions.SSLError as e:
+        print(f"❌ Erreur SSL 1xbet: {e}")
+        if ERROR_HANDLERS_AVAILABLE:
+            return render_match_error(match_id, user, "SSL_ERROR", "Erreur de connexion SSL avec l'API 1xbet")
+        else:
+            return f"❌ Erreur SSL 1xbet: {e}"
+    except requests.exceptions.ConnectionError as e:
+        print(f"❌ Erreur connexion 1xbet: {e}")
+        if ERROR_HANDLERS_AVAILABLE:
+            return render_match_error(match_id, user, "CONNECTION_ERROR", "Impossible de se connecter à l'API 1xbet")
+        else:
+            return f"❌ Erreur connexion 1xbet: {e}"
+    except requests.exceptions.Timeout as e:
+        print(f"❌ Timeout 1xbet: {e}")
+        if ERROR_HANDLERS_AVAILABLE:
+            return render_match_error(match_id, user, "TIMEOUT_ERROR", "L'API 1xbet met trop de temps à répondre")
+        else:
+            return f"❌ Timeout 1xbet: {e}"
+    except Exception as e:
+        print(f"❌ Erreur inattendue: {e}")
+        if ERROR_HANDLERS_AVAILABLE:
+            return render_match_error(match_id, user, "UNKNOWN_ERROR", f"Erreur inattendue: {str(e)}")
+        else:
+            return f"❌ Erreur inattendue: {e}"
 
         # EXTRACTION DU TEMPS DE JEU (MINUTE)
         minute = 0

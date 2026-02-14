@@ -376,18 +376,26 @@ def ml_status():
 @api_bp.route('/ml/predict/1x2', methods=['POST'])
 @require_auth
 def predict_match_1x2(user_payload):
-    """Prédit le résultat d'un match (1/X/2)"""
     if not ML_AVAILABLE:
         return jsonify({'error': 'Module ML non disponible'}), 503
     
     try:
-        match_data = request.get_json()
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({'error': 'Donn??es du match requises'}), 400
+        
+        match_data = None
+        if isinstance(data, dict) and isinstance(data.get('match_data'), dict):
+            match_data = data.get('match_data')
+        elif isinstance(data, dict):
+            match_data = data
+        
         if not match_data:
-            return jsonify({'error': 'Données du match requises'}), 400
+            return jsonify({'error': 'Donn??es du match requises'}), 400
         
         prediction = ml_integration.predict_match_result(match_data)
         
-        # Logger la prédiction
+        # Logger la pr??diction
         audit = AuditLog(
             user_id=user_payload['user_id'],
             action='ML_PREDICTION_1X2',
@@ -402,26 +410,30 @@ def predict_match_1x2(user_payload):
         return jsonify(prediction)
         
     except Exception as e:
-        return jsonify({'error': f'Erreur de prédiction: {str(e)}'}), 500
+        return jsonify({'error': f'Erreur de pr??diction: {str(e)}'}), 500
 
 @api_bp.route('/ml/predict/over-under', methods=['POST'])
 @require_auth
 def predict_over_under(user_payload):
-    """Prédit Over/Under pour une ligne donnée"""
     if not ML_AVAILABLE:
         return jsonify({'error': 'Module ML non disponible'}), 503
     
     try:
-        data = request.get_json()
-        match_data = data.get('match_data', {})
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({'error': 'Donn??es du match requises'}), 400
+        
+        match_data = data.get('match_data')
+        if not isinstance(match_data, dict):
+            match_data = data
         line = data.get('line', 2.5)
         
         if not match_data:
-            return jsonify({'error': 'Données du match requises'}), 400
+            return jsonify({'error': 'Donn??es du match requises'}), 400
         
         prediction = ml_integration.predict_over_under(match_data, line)
         
-        # Logger la prédiction
+        # Logger la pr??diction
         audit = AuditLog(
             user_id=user_payload['user_id'],
             action='ML_PREDICTION_OVER_UNDER',
@@ -437,26 +449,30 @@ def predict_over_under(user_payload):
         return jsonify(prediction)
         
     except Exception as e:
-        return jsonify({'error': f'Erreur de prédiction: {str(e)}'}), 500
+        return jsonify({'error': f'Erreur de pr??diction: {str(e)}'}), 500
 
 @api_bp.route('/ml/predict/handicap', methods=['POST'])
 @require_auth
 def predict_handicap(user_payload):
-    """Prédit le résultat d'un handicap"""
     if not ML_AVAILABLE:
         return jsonify({'error': 'Module ML non disponible'}), 503
     
     try:
-        data = request.get_json()
-        match_data = data.get('match_data', {})
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({'error': 'Donn??es du match requises'}), 400
+        
+        match_data = data.get('match_data')
+        if not isinstance(match_data, dict):
+            match_data = data
         handicap = data.get('handicap', -1.5)
         
         if not match_data:
-            return jsonify({'error': 'Données du match requises'}), 400
+            return jsonify({'error': 'Donn??es du match requises'}), 400
         
         prediction = ml_integration.predict_handicap(match_data, handicap)
         
-        # Logger la prédiction
+        # Logger la pr??diction
         audit = AuditLog(
             user_id=user_payload['user_id'],
             action='ML_PREDICTION_HANDICAP',
@@ -472,23 +488,31 @@ def predict_handicap(user_payload):
         return jsonify(prediction)
         
     except Exception as e:
-        return jsonify({'error': f'Erreur de prédiction: {str(e)}'}), 500
+        return jsonify({'error': f'Erreur de pr??diction: {str(e)}'}), 500
 
 @api_bp.route('/ml/predict/all', methods=['POST'])
 @require_premium
 def predict_all(user_payload):
-    """Obtient toutes les prédictions pour un match (premium uniquement)"""
     if not ML_AVAILABLE:
         return jsonify({'error': 'Module ML non disponible'}), 503
     
     try:
-        match_data = request.get_json()
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({'error': 'Donn??es du match requises'}), 400
+        
+        match_data = None
+        if isinstance(data, dict) and isinstance(data.get('match_data'), dict):
+            match_data = data.get('match_data')
+        elif isinstance(data, dict):
+            match_data = data
+        
         if not match_data:
-            return jsonify({'error': 'Données du match requises'}), 400
+            return jsonify({'error': 'Donn??es du match requises'}), 400
         
         predictions = ml_integration.get_all_predictions(match_data)
         
-        # Logger la prédiction complète
+        # Logger la pr??diction compl??te
         audit = AuditLog(
             user_id=user_payload['user_id'],
             action='ML_PREDICTION_ALL',
@@ -503,11 +527,8 @@ def predict_all(user_payload):
         return jsonify(predictions)
         
     except Exception as e:
-        return jsonify({'error': f'Erreur de prédiction: {str(e)}'}), 500
+        return jsonify({'error': f'Erreur de pr??diction: {str(e)}'}), 500
 
-# --- Health Check ---
-
-@api_bp.route('/health')
 def health_check():
     """Vérification de santé de l'API"""
     return jsonify({

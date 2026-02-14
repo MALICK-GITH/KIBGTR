@@ -22,47 +22,9 @@ services:
         value: production
       - key: FLASK_DEBUG
         value: "false"
+      - key: REQUIRE_DATABASE_URL
+        value: "1"
 
     domains:
       - fifa12345.onrender.com
 
-  # ============================
-  # Base de données PostgreSQL
-  # ============================
-  - type: pserv
-    name: fifa12345-db
-    plan: free
-    databaseName: fifa12345
-    postgresVersion: 14
-    ipAllowList: []
-
-    envVars:
-      - key: POSTGRES_USER
-        value: fifa12345_user
-      - key: POSTGRES_PASSWORD
-        generateValue: true
-      - key: POSTGRES_DB
-        value: fifa12345
-
-    backup:
-      schedule: "0 2 * * *"
-      retentionDays: 30
-
-  # ============================
-  # Service CRON (backup / tâches)
-  # ============================
-  - type: cron
-    name: fifa12345-backup
-    runtime: python
-    schedule: "0 3 * * *"
-
-    buildCommand: pip install -r requirements.txt
-    startCommand: python render_backup_service.py
-
-    envVars:
-      - key: BACKUP_TYPE
-        value: daily_full
-      - key: RETENTION_DAYS
-        value: 30
-      - key: BACKUP_LOCATION
-        value: render_internal

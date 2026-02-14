@@ -42,6 +42,20 @@ class User(db.Model):
         return f"<User {self.username}>"
 
 
+
+class UserFile(db.Model):
+    __tablename__ = "user_files"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    filename = db.Column(db.String(255), nullable=True)
+    content_type = db.Column(db.String(100), nullable=True)
+    data = db.Column(db.LargeBinary, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<UserFile {self.id} - {self.filename}>"
+
 class Prediction(db.Model):
     """Prédictions générées par l'IA pour les matchs"""
     __tablename__ = "predictions"

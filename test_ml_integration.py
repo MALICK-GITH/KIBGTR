@@ -100,6 +100,17 @@ def test_ml_integration():
     except Exception as e:
         print(f"❌ Exception: {e}")
     
+    # 7. Test donn??es invalides
+    print("\n7?????? Test donn??es invalides:")
+    try:
+        bad_pred = ml_integration.predict_match_result("bad_input")
+        if "error" in bad_pred:
+            print(f"??? Erreur g??r??e correctement: {bad_pred['error']}")
+        else:
+            print("??? Erreur attendue, mais pr??diction retourn??e")
+    except Exception as e:
+        print(f"??? Exception inattendue: {e}")
+
     print("\n" + "=" * 50)
     print("🎉 TEST D'INTÉGRATION ML TERMINÉ")
     return True
